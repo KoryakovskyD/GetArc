@@ -10,11 +10,11 @@ public class GuiFormBasic extends JFrame {
     private JTextField inputPlatfName = new JTextField("RIO");
     private JTextField inputReportRecList = new JTextField("d.koryakovsky@op.local");
 
-    private JLabel labelSrcDir = new JLabel("Путь к архиву ПО ЦВК:");
-    private JLabel labelPrjName = new JLabel("Имя проекта:");
-    private JLabel labelArchServer = new JLabel("Архивный сервер изделия:");
-    private JLabel labelPlatfName = new JLabel("Выбор платформы:");
-    private JLabel labelReportRecList = new JLabel("Список email адресов получателей отчета о работе программы:");
+    private JLabel labelSrcDir = new JLabel("Путь к архиву ПО ЦВК");
+    private JLabel labelPrjName = new JLabel("Имя проекта");
+    private JLabel labelArchServer = new JLabel("Архивный сервер изделия");
+    private JLabel labelPlatfName = new JLabel("Выбор платформы");
+    private JLabel labelReportRecList = new JLabel("Список email адресов получателей отчета о работе программы");
 
 
     private JButton button = new JButton("Далее");
@@ -24,7 +24,7 @@ public class GuiFormBasic extends JFrame {
 
     public GuiFormBasic() {
         super("Основные настройки GetArc");
-        this.setBounds(200,200,900,500);
+        this.setBounds(200,200,1100,500);
         this.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 
         Container container = this.getContentPane();

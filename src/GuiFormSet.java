@@ -8,20 +8,27 @@ public class GuiFormSet extends JFrame {
 
 
     private JTextField inputDestDir = new JTextField("/home/PROJECTS/ARIADNA_VERS/DATE_COPY");
-    private JTextField inputAmountCopyOnServ = new JTextField("10");
+    private JTextField inputIPCopyServ = new JTextField("192.168.62.2");
+    private JTextField inputProjPathCopyOnServ = new JTextField("/arc/home/PROJECTS/CURRENT/ARIADNA/VERSIONS");
+    private JTextField inputExcludeObjList = new JTextField("*.OLD *.old *.Old *.sav *.Sav *.SAV *.blank *.bad *.Bad *.BAD *.cap .depend *.a *.o");
 
 
     private JLabel labelSilent = new JLabel("Запрет вывода сообщений на экран");
-    private JLabel labelDestDir = new JLabel("Каталог, в котором будет создаваться архив:");
-    private JLabel labelAmountCopyOnServ = new JLabel("Количество копий на сервере изделия");
+    private JLabel labelDestDir = new JLabel("Каталог, в котором будет создаваться архив");
     private JLabel labelСheckArc = new JLabel("Проверка собранного архива");
     private JLabel labelCreateCopyServ = new JLabel("Создать копию на сервере");
+    private JLabel labelIPCopyServ = new JLabel("IP-адрес сервера архивных копий");
+    private JLabel labelIProjPathCopyOnServ = new JLabel("Путь для копирования собранного архива");
+    private JLabel labelExcludeObjList = new JLabel("Список обьектов для исключения при копировании");
+    private JLabel labelSPOLastVer = new JLabel("Копирование последних версий СПО из каьалога COMMON_MNT");
 
 
 
     private JCheckBox checkSilent = new JCheckBox("", false);
     private JCheckBox checkCheckArc = new JCheckBox("", false);
     private JCheckBox checkCreateCopyServ = new JCheckBox("", false);
+    private JCheckBox checkSPOLastVer = new JCheckBox("", false);
+
 
     private JButton button = new JButton("Далее");
 
@@ -29,7 +36,7 @@ public class GuiFormSet extends JFrame {
 
     public GuiFormSet() {
         super("Настройки архивной копии GetArc");
-        this.setBounds(200,200,900,500);
+        this.setBounds(200,200,1100,500);
         this.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         this.setVisible(true);
 
@@ -43,14 +50,23 @@ public class GuiFormSet extends JFrame {
         container.add(labelDestDir);
         container.add(inputDestDir);
 
-        container.add(labelAmountCopyOnServ);
-        container.add(inputAmountCopyOnServ);
-
         container.add(labelСheckArc);
         container.add(checkCheckArc);
 
         container.add(labelCreateCopyServ);
         container.add(checkCreateCopyServ);
+
+        container.add(labelIPCopyServ);
+        container.add(inputIPCopyServ);
+
+        container.add(labelIProjPathCopyOnServ);
+        container.add(inputProjPathCopyOnServ);
+
+        container.add(labelExcludeObjList);
+        container.add(inputExcludeObjList);
+
+        container.add(labelSPOLastVer);
+        container.add(checkSPOLastVer);
 
         button.addActionListener(new ButtonEventListener());
         container.add(button);
@@ -69,10 +85,14 @@ public class GuiFormSet extends JFrame {
             message += "Silent=" + ((checkSilent.isSelected())
                     ?"1":"0") + "\n";
             message += "DestDir=" + inputDestDir.getText() + "\n";
-            message += "AmountCopyOnServ=" + inputAmountCopyOnServ.getText() + "\n";
             message += "CheckArc=" + ((checkCheckArc.isSelected())
                     ?"1":"0") + "\n";
             message += "CreateCopyOnServ=" + ((checkCreateCopyServ.isSelected())
+                    ?"1":"0") + "\n";
+            message += "IPCopyServ=" + inputIPCopyServ.getText() + "\n";
+            message += "ProjPathCopyOnServ=" + inputProjPathCopyOnServ.getText() + "\n";
+            message += "ExcludeObjList=" + "\"" + inputExcludeObjList.getText()+ "\"" + "\n";
+            message += "SPOLastVer=" + ((checkSPOLastVer.isSelected())
                     ?"1":"0") + "\n";
             message += "[ARC_SETUP]" + "\n";
 
