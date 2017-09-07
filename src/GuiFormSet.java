@@ -21,6 +21,9 @@ public class GuiFormSet extends JFrame {
     private JLabel labelIProjPathCopyOnServ = new JLabel("Путь для копирования собранного архива");
     private JLabel labelExcludeObjList = new JLabel("Список обьектов для исключения при копировании");
     private JLabel labelSPOLastVer = new JLabel("Копирование последних версий СПО из каьалога COMMON_MNT");
+    private JLabel labelFMObyMake = new JLabel("Копирование версий ФПО на основе Makefile-s");
+    private JLabel labelSetAcc = new JLabel("Выставить атрибуты разрешения общего доступа к файлам и каталогам");
+    private JLabel labelArcNewVer = new JLabel("Создать новую версию архива (например: текущая 3.1, будет 3.2)");
 
 
 
@@ -28,6 +31,9 @@ public class GuiFormSet extends JFrame {
     private JCheckBox checkCheckArc = new JCheckBox("", false);
     private JCheckBox checkCreateCopyServ = new JCheckBox("", false);
     private JCheckBox checkSPOLastVer = new JCheckBox("", false);
+    private JCheckBox checkFMObyMake = new JCheckBox("", false);
+    private JCheckBox checkSetAcc = new JCheckBox("", false);
+    private JCheckBox checkArcNewVer = new JCheckBox("", false);
 
 
     private JButton button = new JButton("Далее");
@@ -68,6 +74,16 @@ public class GuiFormSet extends JFrame {
         container.add(labelSPOLastVer);
         container.add(checkSPOLastVer);
 
+        container.add(labelFMObyMake);
+        container.add(checkFMObyMake);
+
+        container.add(labelSetAcc);
+        container.add(checkSetAcc);
+
+        container.add(labelArcNewVer);
+        container.add(checkArcNewVer);
+
+
         button.addActionListener(new ButtonEventListener());
         container.add(button);
     }
@@ -93,6 +109,12 @@ public class GuiFormSet extends JFrame {
             message += "ProjPathCopyOnServ=" + inputProjPathCopyOnServ.getText() + "\n";
             message += "ExcludeObjList=" + "\"" + inputExcludeObjList.getText()+ "\"" + "\n";
             message += "SPOLastVer=" + ((checkSPOLastVer.isSelected())
+                    ?"1":"0") + "\n";
+            message += "FMObyMake=" + ((checkFMObyMake.isSelected())
+                    ?"1":"0") + "\n";
+            message += "SetAcc=" + ((checkSetAcc.isSelected())
+                    ?"1":"0") + "\n";
+            message += "ArcNewVer=" + ((checkArcNewVer.isSelected())
                     ?"1":"0") + "\n";
             message += "[ARC_SETUP]" + "\n";
 
