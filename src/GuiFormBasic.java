@@ -1,5 +1,7 @@
 import java.awt.*;
 import java.awt.event.*;
+import java.io.FileWriter;
+import java.io.IOException;
 import javax.swing.*;
 
 public class GuiFormBasic extends JFrame {
@@ -69,6 +71,15 @@ public class GuiFormBasic extends JFrame {
 
 
             System.out.println(message);
+
+            try (FileWriter writer = new FileWriter("C:\\USR\\aa.txt",true))
+            {
+                writer.write(message);
+                writer.flush();
+            }
+            catch (IOException ex){
+                System.out.println(ex.getMessage());
+            }
 
             setVisible(false);
 

@@ -119,7 +119,13 @@ public class GuiFormSet extends JFrame {
             message += "[ARC_SETUP]" + "\n";
 
             System.out.println(message);
-            System.exit(0);
+
+            setVisible(false);
+
+            GuiFormList app3 = new GuiFormList();
+            app3.setVisible(true);
+
+            //System.exit(0);
         }
     }
 
