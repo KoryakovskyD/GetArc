@@ -2,6 +2,8 @@ import javax.swing.*;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.io.FileWriter;
+import java.io.IOException;
 
 
 public class GuiFormSet extends JFrame {
@@ -116,9 +118,18 @@ public class GuiFormSet extends JFrame {
                     ?"1":"0") + "\n";
             message += "ArcNewVer=" + ((checkArcNewVer.isSelected())
                     ?"1":"0") + "\n";
-            message += "[ARC_SETUP]" + "\n";
+            message += "[ARC_SETUP]" + "\n" + "\n";
 
             System.out.println(message);
+
+            try (FileWriter writer = new FileWriter("C:\\USR\\aa.txt",true))
+            {
+                writer.write(message);
+                writer.flush();
+            }
+            catch (IOException ex){
+                System.out.println(ex.getMessage());
+            }
 
             setVisible(false);
 

@@ -67,12 +67,12 @@ public class GuiFormBasic extends JFrame {
             message += "PrjName=" + inputPrjName.getText() + "\n";
             message += "PlatfName=" + inputPlatfName.getText() + "\n";
             message += "ReportRecList=" + "\"" + inputReportRecList.getText() + "\"" + "\n";
-            message += "[COMMON]" + "\n";
+            message += "[COMMON]" + "\n" + "\n";
 
 
             System.out.println(message);
 
-            try (FileWriter writer = new FileWriter("C:\\USR\\aa.txt",true))
+            try (FileWriter writer = new FileWriter("C:\\USR\\aa.txt",false))
             {
                 writer.write(message);
                 writer.flush();

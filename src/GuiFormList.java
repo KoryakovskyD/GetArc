@@ -1,16 +1,24 @@
 import java.awt.*;
 import java.awt.event.*;
+import java.io.FileWriter;
+import java.io.IOException;
 import javax.swing.*;
 
 public class GuiFormList extends JFrame {
 
-    private JTextField inputArcServDirs = new JTextField("CHECK*" +
-                                                         "~ARCPD" +
-                                                         "~INFO");
+    private JTextArea inputArcServDirs = new JTextArea("CHECK*" + "\n" +
+                                                         "~ARCPD" + "\n" +
+                                                         "~INFO"  + "\n" +
+                                                         "SRC/COMMON_MNT" + "\n" +
+                                                         "SRC/RIO" + "\n" +
+                                                         "~SRC/INTEL" + "\n" +
+                                                         "FLASH/RIO" + "\n" +
+                                                         "FLASH/COMMON_MNT");
 
-    private JLabel labelArcServDirs = new JLabel("Список каталогов, которые будут скопированиы с сервера изделия."
-            + "\n" + "Символ ~ перед именем каталога означает," + "\n"
-            + "что не нужно генерировать ошибку при его отсутствии");
+
+    private JLabel labelArcServDirs = new JLabel("<html>Список каталогов, которые будут скопированиы с сервера изделия."
+            + "<br>" + "Символ ~ перед именем каталога означает," + "<br>"
+            + "что не нужно генерировать ошибку при его отсутствии</html>");
 
 
     private JButton button = new JButton("Далее");
@@ -28,6 +36,7 @@ public class GuiFormList extends JFrame {
 
         container.add(labelArcServDirs);
         container.add(inputArcServDirs);
+        inputArcServDirs.setFont(new Font("Dialog", Font.PLAIN, 16));
 
 
         container.add(button);
@@ -47,16 +56,24 @@ public class GuiFormList extends JFrame {
 
             message += "[ArcServDirs]" + "\n";
             message += inputArcServDirs.getText() + "\n";
-            message += "[ArcServDirs]" + "\n";
+            message += "[ArcServDirs]" + "\n" + "\n";
 
 
             System.out.println(message);
 
-            //setVisible(false);
+            try (FileWriter writer = new FileWriter("C:\\USR\\aa.txt",true))
+            {
+                writer.write(message);
+                writer.flush();
+            }
+            catch (IOException ex){
+                System.out.println(ex.getMessage());
+            }
 
-            System.exit(0);
-           // GuiFormSet app2 = new GuiFormSet();
-            //app2.setVisible(true);
+            setVisible(false);
+
+            GuiFormHosts app3 = new GuiFormHosts();
+            app3.setVisible(true);
         }
     }
 
