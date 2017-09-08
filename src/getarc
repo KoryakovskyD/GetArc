@@ -1,0 +1,1856 @@
+#!/bin/bash
+#####################################################################
+# Назначение: Создание копии архива изделия (обычно календарных копий)
+#
+#
+# В качестве обязательного параметра указывается ключ:
+#     -GA   - начать создание копии архива изделия
+#                      или
+#     -GC   - начать создание календарной копии архива изделия
+#
+#     -SA   - начать раскладывание архива изделия по хостам
+#
+# В качестве необязательных параметров можно указать ключи:
+#     -l    - путь и имя логфайла
+#     -pc   - имя(и путь) файла конфигурации проекта
+#
+#
+# Разработчик: Коряковский Д.О., тел. 704, НИС-315
+# Дата последней корректировки: 23.03.2016
+#####################################################################
+
+# Версия программы
+ver="4.13"
+
+# Файл конфигурации проекта
+PrjCfgFN="getarc.cfg"
+
+# Файл настроек программы
+OptFN="getarc.ini"
+
+# Файл ошибок исполнения заданной команды (для функции RunCMD)
+ErrLog="/tmp/getarc.err"
+
+#путь и имя библиотеки функций утилит
+UTILSLIB="/opt/mfp/UTILITIES/utils.lib"
+
+
+
+####################################################################################
+
+
+# Имена переменных, которые нужно получить из файла конфигурации проекта в блоке LIN
+VarsInCfgLIN="LINShareDir"
+
+# Имена переменных, которые нужно получить из файла конфигурации проекта в блоке WIN
+VarsInCfgWIN="WINShareDir"
+
+# Имена переменных, которые нужно получить из файла конфигурации проекта в блоке COMMON
+VarsInCfgCOMMON="PrjName SrcDir ArchServer PlatfName ~ReportRecList"
+
+# Имена переменных, которые нужно получить из файла конфигурации проекта в блоке CAL_SETUP
+VarsInCfgCAL="DestDir ExcludeObjList Silent ArcNewVer ~IPCopyServ CreateCopyServ ~AmountCopyOnServDest ~IPCopyServ ProjPathCopyOnServ SPOLastVer FMObyMake SetAcc ~AmountCopyOnServ CheckArc"
+
+# Имена переменных, которые нужно получить из файла конфигурации проекта в блоке ARC_SETUP
+VarsInCfgARC="DestDir ExcludeObjList Silent ArcNewVer ~IPCopyServ CreateCopyServ ~AmountCopyOnServDest ~IPCopyServ ProjPathCopyOnServ SPOLastVer FMObyMake SetAcc CheckArc"
+
+# Имена переменных, которые нужно получить из файла настроек
+VarsInOpt="~HostReachInterval cmdCP cmdZIP MaxLogSize"
+
+# Каталог для монтирования удаленных ЭВМ
+MountPath="/mnt/$USER/getarc"
+
+# Каталог запуска программы
+StartDir=$PWD
+
+# Ширина поля для строки сообщения выводимого на экран и в логфайл
+MaxMSGlen=145
+
+# Флаг наличия хоть одного недоступного по сети хоста
+fUnreachHost=0
+
+# Флаг наличия хоть одной неудачно выполненой команды(внутри некоторого блока команд)
+fCmdErrOnCurHost=0
+
+# Статус архива
+ArcStatMsg=""
+
+
+
+
+
+########################################################################################
+#                           ФУНКЦИИ
+########################################################################################
+
+
+
+# Функция выполняет заданную команду, и печатает её и код завершения([ OK ]/[ ERROR ]) на экран и в логфайл $LastRunLog
+# Входные параметры:
+#  $1 - команда
+# Выходные значения:
+#  SaveExCod - код завершения заданной команды
+RunCMD()
+{
+  Cmd="$1"
+
+
+  if [ "`echo "$Cmd" | grep '/SRC/COMMON_MNT'`" != "" ] || [ "`echo "$Cmd" | grep '/FLASH'`" != "" ]; then
+      Ex=$(echo "--exclude-from=$StartDir/ExcludeObjList" | sed 's/\//\\\//g')
+      Cmd=`echo "$Cmd" | sed "s/$Ex//"`
+ fi
+
+
+  $Cmd > /dev/null 2>$ErrLog
+  SaveExCod=$?
+
+  # Форматирование вывода про копировании
+  if [ "`echo $Cmd | grep ExcludeObjList`" != "" ]; then
+     InCmd=`echo $Cmd | awk -F'ExcludeObjList ' {'print $2'} | grep -o "$DestDir.*$"`
+     InCmdNew=`echo "$InCmd" | sed 's/\//\\\\\//g'`
+     OutCmd=`echo $Cmd | awk -F'ExcludeObjList ' {'print $2'} | sed "s/$InCmdNew//"`
+
+     if [ "$OutCmd" == "" ]; then
+        OutCmd=`echo $Cmd | awk -F'ExcludeObjList ' {'print $2'} | awk -F' ' {'print $1'}`
+        InCmd=`echo $Cmd | awk -F'ExcludeObjList ' {'print $2'} | awk -F' ' {'print $2'}`
+     fi
+
+     Cmd=""
+  fi
+
+
+
+
+  if [ $SaveExCod == 0 ]; then
+     Result="[ OK ]"
+  else
+     # Флаг, показывающий, что при выполнении заданной команды произошла ошибка
+     fCmdErrOnCurHost=1
+     Result="[ ERROR ]"
+     if [ "$Cmd" == "" ]; then
+        [ "$Silent" != "1" ] && printf "\n${COLOR_Red}%s    Копирование:\n            из:  %s\n            в:   %s\n${COLOR_End}\n" "${Result}" "${OutCmd}" "${InCmd}"
+     else
+        [ "$Silent" != "1" ] && printf "\n${COLOR_Red}%s    %s\n${COLOR_End}\n" "${Result}" "${Cmd}"
+     fi
+  fi
+
+  #записываем в логфайл комментарий с результатом завершении операции
+  if [ "$Cmd" == "" ]; then
+      printf "%s    Копирование:\n            из:  %s\n            в:   %s\n" "${Result}" "${OutCmd}" "${InCmd}" >> $LastRunLog
+  else
+      printf "%s    %s\n" "${Result}" "${Cmd}" >> $LastRunLog
+  fi
+
+  if [ $SaveExCod != 0 ]; then
+     cat $ErrLog >> $LastRunLog
+     echo -e "\n" >> $LastRunLog
+  fi
+
+  sudo rm -f $ErrLog
+}  # RunCMD()
+
+
+
+
+# Функции проверки доступности хоста по сети
+# Выходные параметры:
+#  $1 - ip-адрес
+#  $2 - интервал между отправкой пакетов (например: -i0.3/-i0,3)
+# Выходные параметры:
+#  fUnreachHost   - флаг наличия хоть одного недоступного по сети хоста(1, если есть недоступные по сети хосты)
+#  HostPingStatus - статус доступности хоста по сети
+PingHost()
+{
+  if  ping "$1" -c2 -w1 $2 > /dev/null 2>&1; then
+
+     MySuperEcho "IP:$1 в сети."
+     HostPingStatus="[ OK ]"
+  else
+     fUnreachHost=1
+
+     MySuperEcho "IP:$1 не в сети!!!" "Red"
+     HostPingStatus="[ UNREACH ]"
+  fi
+} #PingHost()
+
+
+
+
+# Функция создания списка доступных и недоступных хостов (их ip-адресов)
+# Входные параметры:
+#  $1 - список с ip-адресами хостов (например: List="192.168.1.1 192.168.1.2")
+#  $2 - интервал между отправкой пакетов (например: -i0.3/-i0,3)
+# Выходные параметры:
+#  UnreachHostList - список (ip+статус) с недостуными по сети хостами (например: List="192.168.1.1     [ UNREACH ]\n192.168.1.2    [ UNREACH ]\n")
+#  GoodIPList - список ip-адресов доступных по сети хостов
+#  BadIPList - список ip-адресов недоступных по сети хостов
+GetReachHostList()
+{
+
+   # Список, в котором лежат ip-адреса
+   HostIPList=$1
+
+   # Интервал между отправкой пакетов
+   PingInterval=$2
+
+   # Список доступных хостов
+   GoodIPList=""
+   # Список недоступных хостов
+   BadIPList=""
+
+   # Бежим по каждой строке c ip-адресом и прибором хоста
+   for CurStr in $HostIPList; do
+
+      # Получим ip-адрес хоста из текущей строки
+      CurIp=`echo "$CurStr" | grep '^[ ]*[0-9]\+\.[0-9]\+\.[0-9]\+\.[0-9]\+'`
+
+      # Переходим на новую строку, если ip-адреса нет или он закомментирован
+      if [ "`echo "$CurIp" | grep '^#'`" != "" ] || [ "$CurIp" == "" ]; then
+         continue
+      fi
+
+      # Проверка хоста на доступность по сети
+      PingHost "$CurIp" "$PingInterval"
+
+      if [ "$HostPingStatus" == "[ UNREACH ]" ]; then
+         # Формирование списков недоступных по сети хостов
+         UnreachHostList="$UnreachHostList`printf "%-25s%s" "$CurIp" "$HostPingStatus"`\n"
+         BadIPList=$BadIPList" "$CurIp
+      else
+         # Формирование списка доступных по сети хостов
+         GoodIPList=$GoodIPList" "$CurIp
+      fi
+   done
+}  # GetReachHostList()
+
+
+
+# Получение(копирование в папку назначения) заданных каталогов с Lin-хоста смонтированного в $MountPath
+# Входные параметры:
+#   $1 - список каталогов проекта для копирования (SRC FLASH ...)
+#        Символ '~' перед именем каталога в спске означает, что каталог нужно копировать только если он существует
+#        (т.е. не генерировать ошибку в случае его отсутствия); пример: DirList="needdir1 needdir2 ~ifexdir needdir3"
+#        Символ '~' будет удален из имени каталога
+#   $PrjName      -  имя проекта
+#   $AllPrjName   -  имя каталога проекта с версией (и, если нужно, с датой)
+GetLinHostDirs()
+{
+   # Бежим по каждому каталогу из списка
+   for CurDir in $1; do
+      # Нужно ли проверять существование текущего каталога перед копированием (значение равно 0 если не надо)
+      fNeedVar=0
+
+      # Если указано несколько приборов
+      CurDirNew=`echo $CurDir | sed 's/,/ /g'`
+      SaveDir=""
+
+      for CurDir in $CurDirNew; do
+
+      if [ "$SaveDir" != "" ]; then
+         DevNameNow="`basename $SaveDir`"
+         CurDir=`echo $SaveDir | sed "s/$DevNameNow/$CurDir/"`
+      fi
+      SaveDir=$CurDir
+
+      # Узнаем обязательный ли для копирования текущий каталог
+      if [ "`echo "$CurDir" | grep '^~'`" == "" ]; then   #да
+          fNeedVar=1
+      else                                                #нет
+          # Удалим символ `~` из имени переменной
+          CurDir=`echo "$CurDir" | sed 's/^~//'`
+      fi
+
+
+
+
+
+      # Скопируем текущий каталог
+      if [ $fNeedVar == 1 ]; then
+          if [ ! -d $DestDir/$AllPrjName/`dirname $CurDir` ]; then
+              mkdir -p $DestDir/$AllPrjName/`dirname $CurDir`
+          fi
+          if [ "`echo $CurDir | grep 'INTEL'`" != "" ]; then
+              RunCMD "$cmdCP $MountPath/$PrjName/`dirname $CurDir/*` $DestDir/$AllPrjName/`dirname $CurDir`"
+          else
+              RunCMD "$cmdCP $MountPath/$PrjName/$CurDir $DestDir/$AllPrjName/`dirname $CurDir`"
+          fi
+      else
+          if [ -d $MountPath/$PrjName/$CurDir ]; then
+             if [ ! -d $DestDir/$AllPrjName/`dirname $CurDir` ]; then
+                mkdir -p $DestDir/$AllPrjName/`dirname $CurDir`
+             fi
+             if [ "`echo $CurDir | grep 'INTEL'`" != "" ]; then
+                 RunCMD "$cmdCP $MountPath/$PrjName/`dirname $CurDir/*` $DestDir/$AllPrjName/`dirname $CurDir`"
+             else
+                 RunCMD "$cmdCP $MountPath/$PrjName/$CurDir $DestDir/$AllPrjName/`dirname $CurDir`"
+             fi
+          fi
+      fi
+
+   if [ $CheckArc == 1 ]; then
+      save=$PWD
+      cd $MountPath/$PrjName
+      one=`echo $ExcludeObjList | sed 's/\.*\.o/SRC**\.o/g' | sed 's/\./\\\./g' | sed 's/*/\.*/g' | sed 's/ /|/g'`
+      find ./$CurDir  -name "*" -exec sh -c "if [ -d {} -a ! -L {} ]; then printf '|      %-10s|     %s\n' 'DIR' '{}'; else stat {} --printf '|      %-10s|     %n\n'; fi" \; 2>/dev/null | grep -vE "/($one)($|/)" >> $save/FinalArc.tmp
+      cd $save
+   fi
+
+      done
+   done
+}   # GetLinHostDirs()
+
+
+
+
+
+# Получение(копирование в папку назначения) заданных каталогов с сервера изделия
+# Входные параметры:
+#   $1 - список каталогов проекта для копирования (SRC FLASH ...)
+#        Символ '~' перед именем каталога в спске означает, что каталог нужно копировать только если он существует
+#        (т.е. не генерировать ошибку в случае его отсутствия); пример: DirList="needdir1 needdir2 ~ifexdir needdir3"
+#        Символ '~' будет удален из имени каталога
+#   $AllPrjName   -  имя каталога проекта с версией (и, если нужно, с датой)
+GetServerDirs()
+{
+   # Список каталогов проекта для копирования (SRC FLASH ...)
+   ListDirs=$1
+
+   for CurDir in $ListDirs; do
+
+      # Переходим на новую строку, если ip-адреса нет или он закомментирован
+      if [ "`echo "$CurDir" | grep '^#'`" != "" ] || [ "$CurDir" == "" ] || [ "$CurDir" == "[ArcServDirs]" ] || [ "$CurDir" == "SRC/COMMON_MNT" ]; then
+         continue
+      fi
+
+      # Нужно ли проверять существование текущего каталога перед копированием (значение равно 0 если не надо)
+      fNeedVar=0
+
+      # Узнаем обязательный ли для копирования текущий каталог
+      if [ "`echo "$CurDir" | grep '^~'`" == "" ]; then   #да
+          fNeedVar=1
+      else                                                #нет
+          # Удалим символ `~` из имени переменной
+          CurDir=`echo "$CurDir" | sed 's/^~//'`
+      fi
+
+      # Удалим точку в конце пути
+      DName=`dirname $CurDir`
+      if [ "$DName" == "." ]; then
+         DName=""
+      fi
+
+      # Скопируем текущий каталог
+      if [ $fNeedVar == 1 ]; then
+          if [ ! -d $DestDir/$AllPrjName/$DName ]; then
+             mkdir -p $DestDir/$AllPrjName/$DName
+          fi
+          RunCMD "$cmdCP $SrcDir/$PrjName/$CurDir $DestDir/$AllPrjName/$DName"
+      else
+          if [ -d $SrcDir/$PrjName/$CurDir ]; then 
+            if [ ! -d $DestDir/$AllPrjName/$DName ]; then
+               mkdir -p $DestDir/$AllPrjName/$DName
+            fi
+            RunCMD "$cmdCP $SrcDir/$PrjName/$CurDir $DestDir/$AllPrjName/$DName"
+          fi
+      fi
+
+   done
+}  #GetServerDirs
+
+
+
+
+
+
+# Создание на сервере изделия копии архива линуксовых хостов (смонтированных в $MountPath)
+# Входные параметры:
+#    $1 - список с ip-адресами хостов (например: List="192.168.1.1 192.168.1.2")
+# Выходные параметры:
+#    HostsStatForMail - результат обработки хостов для отправки письма на почту (ip+статус(OK или ERROR))
+GetArcFromLinHosts()
+{
+ # Бежим по каждому хосту
+ for CurIp in $1; do
+
+   echo -e "\n\n[LinHostIP=$CurIp] Begin:{`date --rfc-3339=seconds | awk -F'+' '{print $1}'`}" >> $LastRunLog
+
+   MySuperEcho "\nСобираем копию архива с линуксового хоста: $CurIp"
+
+   # Обнулим флаг, показывающий, что при копировании архива изделия с текущего хоста были ошибки
+   fCmdErrOnCurHost=0
+
+
+   # Получим из файла конфигурации проекта имя прибора хранящегося в архиве текущего хоста (по ip этого хоста)
+   DevName=`grep $CurIp\  $PrjCfgFN | awk '{print $2}'`
+   if [ "$DevName" == "" ]; then
+       echo -e "В файле конфигурации проекта не указанно имя прибора(подсистемы)!" >> $LastRunLog
+       MySuperEcho "\nВ файле конфигурации проекта не указанно имя прибора(подсистемы), каторый(ая) находится в архиве хоста \"$CurIp\"!\n" "Red"
+       HostsStatForMail="$HostsStatForMail$CurIp     [ ERROR ]\n"
+       echo -e "[LinHostIP=$CurIp] End:{`date --rfc-3339=seconds | awk -F'+' '{print $1}'`}" >> $LastRunLog
+       continue
+   fi
+
+
+   # Монтируем хост
+   RunCMD "sudo mount $CurIp:$LINShareDir $MountPath"
+   if [ $SaveExCod != 0 ]; then
+      HostsStatForMail="$HostsStatForMail$CurIp     [ ERROR ]\n"
+      IPListWithError="$IPListWithError$CurIp "
+      echo -e "[LinHostIP=$CurIp] End:{`date --rfc-3339=seconds | awk -F'+' '{print $1}'`}" >> $LastRunLog
+      continue
+   fi
+
+
+   fPlatf=0
+   SaveCurPlatf=$PlatfName
+   for CurPlatf in $SaveAllPlatf; do
+       [ -d $MountPath/$PrjName/SRC/$CurPlatf ] && PlatfName=$CurPlatf && fPlatf=1 && break
+   done
+
+   # Список каталогов для копирования
+   ListDir="SRC/$PlatfName/$DevName ~SRC.TU/$PlatfName/$DevName ~SRC/$PlatfName/${DevName}_MCBC ~SRC/$PlatfName/${DevName}_MCBC.SP"
+
+
+   # Копирование указанных каталогов с текущего хоста
+   GetLinHostDirs "$ListDir"
+
+   # Отмонтируем хост
+   RunCMD "sudo umount $MountPath"
+
+
+   echo -e "[LinHostIP=$CurIp] End:{`date --rfc-3339=seconds | awk -F'+' '{print $1}'`}" >> $LastRunLog
+
+   # Если при копировании архива изделия с текущего хоста были ошибки, то допишем сообщение об ошибке в
+   # переменную с результатом обработки хостов для отправки письма на почту
+   if [ "$fCmdErrOnCurHost" == "0" ]; then
+      HostsStatForMail="$HostsStatForMail`printf "%-25s%s" "$CurIp" "[ OK ]"`\n"
+   else
+      HostsStatForMail="$HostsStatForMail`printf "%-25s%s" "$CurIp" "[ ERROR ]"`\n"
+      IPListWithError="$IPListWithError$CurIp "
+   fi
+
+
+   [ $fPlatf == 1 ] && PlatfName=$SaveCurPlatf
+
+
+   ContWork="y"
+   if [ "$Silent" != "1" ] && [ "$fCmdErrOnCurHost" != "0" ]; then
+      echo -e "\nПри обработке хоста произошла ошибка, продолжить работу программы? [Y/N]\n"
+      read ContWork
+   fi
+
+
+   if [ "$ContWork" != "Y" ] && [ "$ContWork" != "y" ]; then
+
+    echo -e "\n\nПри создании копии архива изделия возникли ошибки!\n\n" >> $LastRunLog
+    ResultInMail="При создании копии архива изделия возникли ошибки!"
+    MySuperEcho "\nПри создании копии архива изделия возникли ошибки!\nСм. лог: $logfile{`date --rfc-3339=seconds | awk -F'+' '{print $1}'`}\n" "Red"
+    ArcStatMsg="[ NOTFULL ]"
+
+    # Завершим работу программы
+    FinalAction
+
+   fi
+
+ done    # Бежим по каждому хосту
+}  #GetArcFromLinHosts()
+
+
+
+# Создание на сервере изделия копии архива виндовых хостов (смонтированных в $MountPath)
+# Входные параметры:
+#    $1 - список с ip-адресами хостов (например: List="192.168.1.1 192.168.1.2")
+#    $PrjName      -  имя проекта
+#    $AllPrjName   -  имя каталога проекта с версией (и, если нужно, с датой)
+# Выходные параметры:
+#    HostsStatForMail - результат обработки хостов для отправки письма на почту (ip+статус(OK или ERROR))
+GetArcFromWinHosts()
+{
+ # Бежим по каждому хосту
+ for CurIp in $1; do
+
+   echo -e "\n\n[WinHostIP=$CurIp] Begin:{`date --rfc-3339=seconds | awk -F'+' '{print $1}'`}" >> $LastRunLog
+
+   MySuperEcho "\nСобираем копию архива с виндового хоста: $CurIp"
+
+   # Обнулим флаг, показывающий, что при копировании архива изделия с текущего хоста были ошибки
+   fCmdErrOnCurHost=0
+
+   # Получим из файла конфигурации проекта имя прибора хранящегося в архиве текущего хоста (по ip этого хоста)
+   DevName=`grep "$CurIp" $PrjCfgFN | awk '{print $2}'`
+   if [ "$DevName" == "" ]; then
+       echo -e "В файле конфигурации проекта не указанно имя прибора(подсистемы)!" >> $LastRunLog
+       MySuperEcho "\nВ файле конфигурации проекта не указанно имя прибора(подсистемы), каторый(ая) находится в архиве хоста \"$CurIp\"!\n" "Red"
+       HostsStatForMail="$HostsStatForMail$CurIp     [ ERROR ]\n"
+       echo -e "[WinHostIP=$CurIp] End:{`date --rfc-3339=seconds | awk -F'+' '{print $1}'`}" >> $LastRunLog
+       continue
+   fi
+
+   # Монтируем хост
+   RunCMD "sudo mount.cifs //$CurIp/$WINShareDir $MountPath -o guest"
+   if [ $SaveExCod != 0 ]; then
+      HostsStatForMail="$HostsStatForMail$CurIp     [ ERROR ]\n"
+      IPListWithError="$IPListWithError$CurIp "
+      echo -e "[WinHostIP=$CurIp] End:{`date --rfc-3339=seconds | awk -F'+' '{print $1}'`}" >> $LastRunLog
+      continue
+   fi
+
+   # Проверка на отсутствие каталога SHTAT
+   if [ ! -d $MountPath/$PrjName/SHTAT ]; then
+      printf "%-${MaxMSGlen}s%s\n" "Directory $PrjName/SHTAT not found!" "[ ERROR ]" >> $LastRunLog
+      MySuperEcho "Каталог $PrjName/SHTAT не найден(хост $CurIp)!" "Red"
+      HostsStatForMail="$HostsStatForMail$CurIp     [ ERROR ]\n"
+      IPListWithError="$IPListWithError$CurIp "
+
+      # Отмонтируем хост
+      RunCMD "sudo umount $MountPath"
+
+      echo -e "[WinHostIP=$CurIp] End:{`date --rfc-3339=seconds | awk -F'+' '{print $1}'`}" >> $LastRunLog
+      continue
+   fi
+
+
+   ShtatTUlist="SHTAT TU"
+   # Сначала заходим в SHTAT, затем в TU
+   for CurDir in $ShtatTUlist; do
+
+      # Список всех версий сигнального ПО
+      ListWithVers=`find $MountPath/$PrjName/$CurDir -maxdepth 1 -type d -printf '%f\n' | grep -o "[vV][0-9]\+\.[0-9]\+$"`
+
+      [ "$ListWithVers" == "" ] && continue
+
+      # определим максимальную версию сигнального ПО
+      MaxDirVers="v0.0"
+      for CurVers in $ListWithVers; do
+         if [ "$CurVers" \> "$MaxDirVers" ]; then
+            MaxDirVers=$CurVers
+         fi
+      done
+
+      DevNameBnd=`echo $DevName | sed 's/\.//'`
+
+      # Каталог, который надо ахивировать
+      DirForZip=$MaxDirVers
+      cd $MountPath/$PrjName/$CurDir
+
+      if [ "$CurDir" == "SHTAT" ]; then
+          DirSRC="SRC"
+          DirFLASH="FLASH"
+      else
+          DirSRC="SRC.TU"
+          DirFLASH="FLASH.TU"
+          DevNameBnd=${DevNameBnd}_TU
+      fi
+
+      # Каталог, в котором будет лежать zip c последней версией сигнального ПО
+      RunCMD "mkdir -p $DestDir/$AllPrjName/$DirSRC/$PlatfName/$DevName/DSP"
+
+      savePwd=$PWD
+      cd $DestDir/$AllPrjName/$DirSRC/$PlatfName/$DevName/DSP
+      rm -R * 2>/dev/null
+      cd $savePwd
+
+
+      if [ ! -e $MountPath/$PrjName/$CurDir/${MaxDirVers}/${DevNameBnd}.bnd ]; then
+           echo -e "[ WARNING ]  Нет файла $PrjName/$CurDir/${MaxDirVers}/${DevNameBnd}.bnd" >> $LastRunLog
+           WarningInLetter="Во время работы программы были предупреждения, посмотрите логфайл.\n"
+           WarningMsg="  [ Warning ]"
+      else
+           RunCMD "$cmdCP $MountPath/$PrjName/$CurDir/${MaxDirVers}/${DevNameBnd}.bnd $DestDir/$AllPrjName/$DirFLASH/$PlatfName/$DevName/01-DP"
+      fi
+
+      # Архивируем каталог с последней версией ПО
+      RunCMD "$cmdZIP $DestDir/$AllPrjName/$DirSRC/$PlatfName/$DevName/DSP/${DevName}_${CurDir}_${MaxDirVers}_$CurDate.zip $DirForZip 2>/dev/null"
+
+      cd $StartDir
+
+   done     # Сначала заходим в SHTAT, затем в TU
+
+   # Отмонтируем хост
+   RunCMD "sudo umount $MountPath"
+
+   echo -e "[WinHostIP=$CurIp] End:{`date --rfc-3339=seconds | awk -F'+' '{print $1}'`}" >> $LastRunLog
+
+   # Если при копировании архива изделия с текущего хоста были ошибки, то допишем сообщение об ошибке в
+   # переменную с результатом обработки хостов для отправки письма на почту
+   if [ "$fCmdErrOnCurHost" == "0" ]; then
+      HostsStatForMail="$HostsStatForMail`printf "%-25s%s" "$CurIp" "[ OK ]"`\n"
+   else
+      HostsStatForMail="$HostsStatForMail`printf "%-25s%s" "$CurIp" "[ ERROR ]"`\n"
+      IPListWithError="$IPListWithError$CurIp "
+   fi
+
+
+   ContWork="y"
+   if [ "$Silent" != "1" ]  && [ "$ArchServer" != "" ] && [ "$fCmdErrOnCurHost" != "0" ]; then
+      echo -e "\nПри обработке хоста произошла ошибка, продолжить работу программы? [Y/N]\n"
+      read ContWork
+   fi
+
+
+   if [ "$ContWork" != "Y" ] && [ "$ContWork" != "y" ]; then
+
+    echo -e "\n\nПри создании копии архива изделия возникли ошибки!\n\n" >> $LastRunLog
+    ResultInMail="При создании копии архива изделия возникли ошибки!"
+    MySuperEcho "\nПри создании копии архива изделия возникли ошибки!\nСм. лог: $logfile{`date --rfc-3339=seconds | awk -F'+' '{print $1}'`}\n" "Red"
+    ArcStatMsg="[ NOTFULL ]"
+
+    # Завершим работу программы
+    FinalAction
+
+   fi
+
+
+
+ done # Бежим по каждому хосту
+}   #GetArcFromWinHosts()
+
+
+
+#  Общие действия, выполняемые непосредственно перед окончанием работы программы
+#  Входные параметры:
+#    ["msg"] - при наличии параметра с сообщением, оно будет отправлено на почту админам, вместо сообщения по-умолчанию
+#    $PrjName      -  имя проекта
+#    $PrjVers          -  версия проекта
+#    $HostsStatForMail -  результат обработки хостов для отправки письма на почту (ip+статус(OK или ERROR))
+#    $UnreachHostList  -  список недоступных по сети хостов(ip+статус(UNREACH))
+#    $ResultInMail     -  итоговое сообщение о результате обработки хостов(были или нет ошибки)
+FinalAction()
+{
+   DateOfEnd=`date --rfc-3339=seconds | awk -F'+' '{print $1}'`
+   # Запишем строку об окончании работы программы
+   echo -e "\nThe end   {$DateOfEnd}\n\n" >> $LastRunLog
+
+if [ "`rpm -qa | grep 'sendmail'`" != "" ]; then
+   SendMess="Y"
+   if [ "$Silent" != "1" ] && [ "$ReportRecList" != "" ] && [ "$fNoAsk" == "0" ]; then
+      echo -e "Отправить письмо с отчётом о работе программы на почту администраторам? [Y/N]\n   ReportRecList=$ReportRecList"
+      read SendMess
+   fi
+
+   if [ "$ReportRecList" != "" ] && ([ "$SendMess" == "Y" ] || [ "$SendMess" == "y" ]) && [ "$fFirstSendMess" == "0" ]; then
+        if [ "$1" == "" ]; then
+         # Отправим письмо с конечным результатом на почту администраторам(сообщение по умолчанию)
+          sudo echo -e "GetArc v$ver   Prj=${PrjName}_${PrjVers},  HOST=$HOSTNAME,  USER=$USER,  DATE=`date --rfc-3339=seconds | awk -F'+' '{print $1}'`\n\nHOSTs STATUS:\n${HostsStatForMail}${UnreachHostList}\n\n$ResultInMail\n" | mail -s "GetArc v$ver   Prj=${PrjName}_${PrjVers}${WarningMsg}  $ArcStatMsg" -r GetArc -a $LastRunLog -a ResultCheck.log "$ReportRecList"
+          if [ $? != 0 ]; then
+            # Удалим старую запись об окончании работы программы
+            sed "s/The end   {$DateOfEnd}//" -i $LastRunLog
+            echo -e "Ошибка отправки отчета с результатами работы программы!" >> $LastRunLog
+            # Запишем новую строку об окончании работы программы
+            echo -e "\nThe end   {`date --rfc-3339=seconds | awk -F'+' '{print $1}'`}\n\n" >> $LastRunLog
+         fi
+        else
+         # Отправим письмо с заданным текстом на почту администраторам
+         sudo echo -e "GetArc v$ver   Prj=${PrjName}_${PrjVers},  HOST=$HOSTNAME,  USER=$USER,  DATE=`date --rfc-3339=seconds | awk -F'+' '{print $1}'`\n\n$1" | mail -s "GetArc v$ver   Prj=${PrjName}_${PrjVers}${WarningMsg}  $ArcStatMsg" -r GetArc -a $LastRunLog -a ResultCheck.log $ReportRecList
+         if [ $? != 0 ]; then
+            # Удалим старую запись об окончании работы программы
+            sed "s/The end   {$DateOfEnd}//" -i $LastRunLog
+            echo -e "Ошибка отправки отчета с результатами работы программы!" >> $LastRunLog
+            # Запишем новую строку об окончании работы программы
+            echo -e "\nThe end   {`date --rfc-3339=seconds | awk -F'+' '{print $1}'`}\n\n" >> $LastRunLog
+         fi
+        fi
+   fi
+fi
+
+
+   # Дозапишем временный логфайл в основной
+   cat $LastRunLog >> $logfile
+
+   sudo chmod 666 $logfile
+
+   # Удалим временные файлы
+   sudo rm -f $LastRunLog
+   sudo rm -f $StartDir/ExcludeObjList
+
+   exit
+}   #FinalAction()
+
+
+
+#Получить из указанного файла заданные переменные программы
+#  Входные параметры:
+#  $1   - список переменных
+#         Необязательные переменные обозначаются символом "~" перед именем, например, VarList="needvar1 needvar2 ~noneedvar needvar3"
+#         символ '~' будет удален из имени
+#  $2   - имя(и путь) файла с переменными (в файле допустимы комментарии (#...))
+#  $3   - Внутри какого блока искать
+GetProgramVars()
+{
+     GetVarsFromFile "$1" "$2" "$3"
+
+     # Проверка на наличие заданной переменной в конфигурационном файле
+     if [ $? != 0 ]; then
+        MySuperEcho "\nНевозможно получить значение переменной $CurVar из файла $2!\n" "Red" "tolog"
+        ArcStatMsg="[ NOTFULL ]"
+
+        # Завершим работу программы
+        FinalAction "Невозможно получить значение переменной $CurVar из файла $2!"
+     fi
+}  #GetProgramVars()
+
+
+
+# Функция печати сообщения на экран
+# Входные параметры:
+#  $1               - сообщение
+#  [$2]             - цвет сообщения(Red,Green,Blue...)
+#  [$3] = tolog    - дублирование сообщения в логфайл
+MySuperEcho()
+{   
+# Цвета
+COLOR_Black=0           # Черный
+COLOR_Red="\E[31;1m"             # Красный
+COLOR_Green="\E[32;1m"           # Зеленый
+COLOR_Yellow="\E[33;1m"          # Желтый
+COLOR_Blue="\E[34;1m"            # Синий
+COLOR_White="\E[37;1m"           # Белый
+    CurColor=""
+    # Если вторым параметром задан цвет...
+    if [ "`echo $2 | grep '^[a-Z]'`" != "" ]; then
+       eval "CurColor=\$COLOR_$2"
+    fi
+
+    if [ "$Silent" != "1" ]; then
+       echo -e "${CurColor}$1\E[0m"
+    fi
+
+    # Если нужно дописать сообщение в лог...
+    if [ "`echo $@ | grep 'tolog'`" != "" ]; then
+        echo -e "$1" >> $LastRunLog
+    fi
+}   #MySuperEcho()
+
+
+
+
+
+
+
+
+
+
+# Функция раскладывания архива по хостам
+# Входные параметры:
+#   1 - флаг начала раскладывания архива (1 - раскладывать, 0 - нет)
+SendArc()
+{
+
+  if [ "$1" == "0" ]; then
+     return 0
+  fi
+
+  # Номер строки с открывающим [LIN]-блоком в файле конфигурации проекта
+  NumberStartLIN=`grep -n "^\[LIN\]" $PrjCfgFN | head -1 | awk -F':' '{print $1}'`
+  # Номер строки с закрывающим [LIN]-блоком в файле конфигурации проекта
+  NumberEndLIN=`grep -n "^\[LIN\]" $PrjCfgFN | tail -1 | awk -F':' '{print $1}'`
+
+  # Список линуксовых ip-адресов
+  ListLINIpInCfg="`sed -n ${NumberStartLIN},${NumberEndLIN}p $PrjCfgFN | awk '{print $1"\n"}'`"
+
+
+  MySuperEcho "\nПроверяем доступность по сети линуксовых хостов:"
+
+  # Формирование списка доступных и недоступных Lin - хостов
+  GetReachHostList "$ListLINIpInCfg" "$PingInterval"
+  LinBadIpList="$BadIPList"
+
+  IPListWithError=""
+
+
+ # Бежим по каждому хосту
+ for CurIp in $GoodIPList; do
+
+   echo -e "\n\n[LinHostIP=$CurIp] Begin:{`date`}" >> $LastRunLog
+
+   MySuperEcho "\nРаскладываем копию архива на линуксовый хост: $CurIp"
+
+   # Обнулим флаг, показывающий, что при раскладке архива изделия на текущий хост были ошибки
+   fCmdErrOnCurHost=0
+
+
+   # Получим из файла конфигурации проекта имя прибора хранящегося в архиве текущего хоста (по ip этого хоста)
+   DevName=`grep $CurIp\  $PrjCfgFN | awk '{print $2}'`
+   if [ "$DevName" == "" ]; then
+       echo -e "В файле конфигурации проекта не указанно имя прибора(подсистемы)!" >> $LastRunLog
+       MySuperEcho "\nВ файле конфигурации проекта не указанно имя прибора(подсистемы), каторый(ая) находится в архиве хоста \"$CurIp\"!\n" "Red"
+       HostsStatForMail="$HostsStatForMail$CurIp     [ ERROR ]\n"
+       echo -e "[LinHostIP=$CurIp] End:{`date`}" >> $LastRunLog
+       continue
+   fi
+
+
+   # Монтируем хост
+   RunCMD "sudo mount $CurIp:$LINShareDir $MountPath"
+   if [ $SaveExCod != 0 ]; then
+      HostsStatForMail="$HostsStatForMail$CurIp     [ ERROR ]\n"
+      IPListWithError="$IPListWithError$CurIp "
+      echo -e "[LinHostIP=$CurIp] End:{`date`}" >> $LastRunLog
+      continue
+   fi
+
+
+
+   RunCMD "mkdir -p $MountPath/${PrjName}_VERS/$AllPrjName/FLASH/$PlatfName"
+   $cmdCP $SrcDir/$PrjName/FLASH/$PlatfName/$DevName $MountPath/${PrjName}_VERS/$AllPrjName/FLASH/$PlatfName
+
+   RunCMD "mkdir -p $MountPath/${PrjName}_VERS/$AllPrjName/SRC/$PlatfName"
+   $cmdCP $SrcDir/$PrjName/SRC/$PlatfName/$DevName $MountPath/${PrjName}_VERS/$AllPrjName/SRC/$PlatfName
+
+   RunCMD "mkdir -p $MountPath/${PrjName}_VERS/$AllPrjName/SRC/COMMON_MNT"
+   RunCMD "mkdir -p $MountPath/${PrjName}_VERS/$AllPrjName/FLASH/COMMON_MNT"
+
+   # Копируем все файлы и ссылки в каталоге SRC/PlatfName
+   AllFileInPlatf=`find $SrcDir/$PrjName/SRC/$PlatfName -maxdepth 1 -type f -o -type l`
+   for CurDir in $AllFileInPlatf; do
+      echo "CurDir=$CurDir"
+      $cmdCP $CurDir $MountPath/${PrjName}_VERS/$AllPrjName/SRC/$PlatfName
+   done
+
+   StrIn=`grep "^PRIB_DIRS" $MountPath/${PrjName}_VERS/$AllPrjName/SRC/$PlatfName/Makedef.USER`
+   StrOut="PRIB_DIRS := $DevName"
+   sed -i -e "s/$StrIn/$StrOut/" $MountPath/${PrjName}_VERS/$AllPrjName/SRC/$PlatfName/Makedef.USER
+
+   StrIn=`grep "^COMMON_DIRS" $MountPath/${PrjName}_VERS/$AllPrjName/SRC/$PlatfName/Makedef.USER | sed -e 's/\//\\\\\//g'`
+   StrOut="COMMON_DIRS := "
+   sed -i -e "s/$StrIn/$StrOut/" $MountPath/${PrjName}_VERS/$AllPrjName/SRC/$PlatfName/Makedef.USER
+
+##   RunCMD "sudo rm $MountPath/$PrjName"
+   RunCMD "ln -s ${PrjName}_VERS/$AllPrjName $MountPath/$PrjName"
+
+
+   # Отмонтируем хост
+   RunCMD "sudo umount $MountPath"
+
+
+   echo -e "[LinHostIP=$CurIp] End:{`date`}" >> $LastRunLog
+
+   # Если при раскладывании архива изделия на текущий хост были ошибки, то допишем сообщение об ошибке в
+   # переменную с результатом обработки хостов для отправки письма на почту
+   if [ "$fCmdErrOnCurHost" == "0" ]; then
+      HostsStatForMail="$HostsStatForMail`printf "%-25s%s" "$CurIp" "[ OK ]"`\n"
+   else
+      HostsStatForMail="$HostsStatForMail`printf "%-25s%s" "$CurIp" "[ ERROR ]"`\n"
+      IPListWithError="$IPListWithError$CurIp "
+   fi
+
+
+   ContWork="y"
+   if [ "$Silent" != "1" ] && [ "$fCmdErrOnCurHost" != "0" ]; then
+      echo -e "\nПри раскладке архива произошла ошибка, продолжить работу программы? [Y/N]\n"
+      read ContWork
+   fi
+
+
+   if [ "$ContWork" != "Y" ] && [ "$ContWork" != "y" ]; then
+
+    echo -e "\n\nПри раскладке архива изделия возникли ошибки!\n\n" >> $LastRunLog
+    ResultInMail="При раскладке архива изделия возникли ошибки!"
+    MySuperEcho "\nПри раскладке архива изделия возникли ошибки!\nСм. лог: $logfile{`date`}\n" "Red"
+
+   fi
+
+ done    # Бежим по каждому хосту
+
+  # Запуск remex для перемонтирования каталога COMMON_MNT
+  ./remex
+
+
+  # Завершим работу программы
+  FinalAction
+}  #SendArc()
+
+
+
+
+
+
+# Функция для проверки собранного архива.
+# Если собранный архив отличается от архива на сервере и хостах изделия, то
+# то программа отправит на почту логфайл с различиями между архивами.
+CheckArc()
+{
+# Сохраним текущую директорию
+SaveCurDir=$PWD
+
+# Получим список всех файлов и каталогов в календарной копии
+cd $DestDir/$AllPrjName
+
+one=`echo $ExcludeObjList | sed 's/\.*\.o/SRC**\.o/g' | sed 's/\./\\\./g' | sed 's/*/\.*/g' | sed 's/ /|/g'`
+
+find -name "*" -exec sh -c "if [ -d {} -a ! -L {} ]; then printf '|      %-10s|     %s\n' 'DIR' '{}'; else stat {} --printf '|      %-10s|     %n\n'; fi" \; 2>/dev/null | grep -vE "/($one)($|/)"| sort -k3 > $SaveCurDir/CheckResAll.tmp
+cd $SaveCurDir
+
+sort -k3 FinalArc.tmp > FinalArcSort
+echo -e "|------------|------------|---------------------------------------------------------------------------------------- " > ResultCheck.log
+echo -e "|Sourse Size |Dest Size   |Name                                                                                     " >> ResultCheck.log
+echo -e "|------------|------------|---------------------------------------------------------------------------------------- " >> ResultCheck.log
+diff FinalArcSort CheckResAll.tmp >> ResultCheck.tmp
+
+i=0
+while read line; do
+
+ if [ "`echo "$line" | grep '^[0-9]'`" != "" ] || [ "`echo "$line" | grep '^-'`" != "" ]; then
+    continue
+ fi
+
+
+ Name=`echo "$line"| awk '{print $5}'`
+ Size=`echo "$line"| awk '{print $3}'`
+
+ if [ "`grep "$Name[ ]*$" ResultCheck.tmp | wc -l`" -gt "1" ]; then
+
+    if [ "`echo "$line" | grep '^>'`" == "" ]; then
+         SOsize=$Size
+         let i=$i+1
+    else
+         SAsize=$Size
+         let i=$i+1
+    fi
+
+    if [ $i == 2 ]; then
+         printf "|%-12s|%-12s|%s\n" "$SOsize" "$SAsize" "$Name" >> ResultCheck.log
+         i=0
+    fi
+ continue
+ fi
+
+
+if [ "`echo "$line" | grep '^>'`" == "" ]; then
+     printf "|%-12s|%-12s|%s\n" "$Size" "-" "$Name" >> ResultCheck.log
+else
+     printf "|%-12s|%-12s|%s\n" "-" "$Size" "$Name" >> ResultCheck.log
+fi
+
+done < ResultCheck.tmp
+
+
+echo -e "|------------|------------|---------------------------------------------------------------------------------------- " >> ResultCheck.log
+
+if [ `wc -l ResultCheck.log | awk '{print $1}'` -eq 4 ]; then
+   echo > ResultCheck.log
+fi
+
+sed -i 's/\.\// /g' ResultCheck.log
+
+
+sudo rm -f CheckResAll.tmp FinalArc.tmp FinalArcSort ResultCheck.tmp
+
+}
+
+
+
+
+
+
+
+
+
+
+
+##################################################################################################
+##################################################################################################
+##################################### MAIN #######################################################
+##################################################################################################
+##################################################################################################
+
+# Текущая дата в цифровом виде
+CurDate=`date --rfc-3339=date`
+
+
+if [ "$1" == "-GC" ]; then
+    echo -e "\n\E[34;1mGetArc v$ver | Создание календарной копии архива изделия.\n\E[0;0m"
+fi
+
+if [ "$1" == "-GA" ]; then
+    echo -e "\n\E[34;1mGetArc v$ver | Создание копии архива изделия.\n\E[0;0m"
+fi
+
+if [ "$1" == "-SA" ]; then
+    echo -e "\n\E[34;1mGetArc v$ver | Раскладывание копии архива изделия по хостам.\n\E[0;0m"
+fi
+
+
+if [ "$1" != "-GA" ] && [ "$1" != "-GC" ] && [ "$1" != "-SA" ]; then
+    echo -e "USAGE: `basename $0` {-GA|-GC|-SA} [-pc=PrjCfgFileName] [-l=LogFile]"
+    echo -e "          -GA               - начать создание копии архива изделия"
+    echo -e "          -GC               - начать создание календарной копии архива изделия"
+    echo -e "          -SA               - начать раскладывание архива изделия по хостам"
+    echo -e "          PrjCfgFileName    - путь и имя файла конфигурации проекта (по умолчанию - $PrjCfgFN)"
+    echo -e "          LogFile           - путь и имя логфайла (по умолчанию - в текущем каталоге)\n"
+    exit
+fi
+
+
+# Удалим временные файлы если скрипт прервут (например CTRL+C)
+trap "rm -f $StartDir/ExcludeObjList; rm -f $ErrLog; exit" 1 2 5 15
+sudo rm -f ResultCheck.log
+
+# Формирование имени общего логфайла (всех запусков)
+if [ "`echo $@ | grep ' \-l='`" != "" ]; then
+   logfile=`echo $@ | awk -F "-l=" '{print $2}' | awk -F " " '{ print $1 }'`
+else
+   logfile="$StartDir/`basename $0`.log"
+fi
+
+# Логфайл текущего запуска программы
+LastRunLog="$StartDir/getarc.tmp.log"
+
+
+fCalCopy=0
+fArcCopy=0
+fSendArc=0
+fSendArcOnly=0
+if [ "`echo $@ | grep '\-GA'`" != "" ]; then
+   fArcCopy=1
+fi
+
+if [ "`echo $@ | grep '\-GC'`" != "" ]; then
+   fCalCopy=1
+fi
+
+if [ "`echo $@ | grep '\-SA'`" != "" ]; then
+   fSendArcOnly=1
+fi
+
+
+
+echo -e "\n\n===================================================================================================" > $LastRunLog
+echo -e "GetArc v$ver, HOST=$HOSTNAME, USER=$USER, Date={`date --rfc-3339=seconds | awk -F'+' '{print $1}'`}\n " >> $LastRunLog
+
+
+if [ "`rpm -qa | grep 'sendmail'`" == "" ]; then
+   echo -e "Установите пакет \"sendmail\", чтобы отправлять письма о работе программы!" >> $LastRunLog
+   MySuperEcho "Установите пакет \"sendmail\", чтобы отправлять письма о работе программы!" "Red"
+   # Признак отсутствия пакета sendmail
+   fNoSendmail=1
+fi
+
+
+
+if [ ! -f $UTILSLIB ]; then
+     MySuperEcho "\nНет файла \"$UTILSLIB\"\n" "tolog"
+     ArcStatMsg="[ NOTFULL ]"
+
+     # Завершим работу программы
+     FinalAction
+fi
+
+# Подключение библиотеки с функциями
+. $UTILSLIB
+
+
+Silent=0
+fNoAsk=0
+fFirstSendMess=0
+
+# Формирование имени файла конфигурации проекта, если он указан параметром
+if [ "`echo $@ | grep '\-pc='`" != "" ]; then
+   PrjCfgFN=`echo $@ | awk -F "-pc=" '{print $2}' | awk -F " " '{ print $1 }'`
+   MySuperEcho "Будет использован файл конфигурации проекта: $PrjCfgFN" "Yellow" "tolog"
+fi
+
+
+# Проверка на наличие конфигурационного файла getarc.cfg
+if [ ! -f $PrjCfgFN ]; then
+     MySuperEcho "Файл конфигурации проекта ($PrjCfgFN) не найден!\n" "Red" "tolog"
+     ArcStatMsg="[ NOTFULL ]"
+
+     # Завершим работу программы
+     FinalAction "Файл конфигурации проекта ($PrjCfgFN) не найден!\n"
+fi
+
+
+# Если файла настроек программы нет в текущей директории...
+if [ ! -f $OptFN ]; then
+
+   MySuperEcho "Файл настроек программы($OptFN) не найден в текущей директории,\nбудет использован путь файла конфигурации проекта" "Yellow" "tolog"
+
+   # Формирование имени файла настроек программы из пути к файлу конфигурации проекта
+   StartDir=`dirname $PrjCfgFN`
+   OptFN=$StartDir/$OptFN
+
+   # Перемещаем логфайл из текущего каталога в новое место
+   mv -f $LastRunLog $StartDir
+
+   # Формирование нового пути логфайлов из пути к файлу конфигурации проекта
+   LastRunLog=$StartDir/`basename $LastRunLog`
+   logfile=$StartDir/`basename $logfile`
+fi
+
+
+# Проверка на наличие файла настроек программы getarc.ini
+if [ ! -f $OptFN ]; then
+    MySuperEcho "Нет файла настроек программы ($OptFN)!\n" "Red" "tolog"
+    ArcStatMsg="[ NOTFULL ]"
+
+    # Завершим работу программы
+    FinalAction "Нет файла настроек программы ($OptFN)!\n"
+fi
+
+
+MySuperEcho "\n{`date --rfc-3339=seconds | awk -F'+' '{print $1}'`}"
+MySuperEcho "Logfile: $logfile"
+WarningInLetter=""
+WarningMsg=""
+
+# Определим версию ядра ОС
+kernver=`uname -r | awk -F'-' '{ print $1 }'`
+if [ "$kernver" \> "3.14.27" ]; then
+   PingInterval="-i0,3"
+else
+   PingInterval="-i0.3"
+fi
+
+
+
+
+
+######################################
+# Обработка входных файлов программы
+######################################
+
+
+
+
+
+
+# Прочитаем заданные переменные из файла настроек программы
+GetProgramVars "$VarsInOpt" "$OptFN"
+
+# Прочитаем заданные переменные из файла конфигурации проекта в блоке LIN
+GetProgramVars "$VarsInCfgLIN" "$PrjCfgFN" "LIN"
+
+# Прочитаем заданные переменные из файла конфигурации проекта в блоке WIN
+GetProgramVars "$VarsInCfgWIN" "$PrjCfgFN" "WIN"
+
+# Прочитаем заданные переменные из файла конфигурации проекта в блоке COMMON
+GetProgramVars "$VarsInCfgCOMMON" "$PrjCfgFN" "COMMON"
+
+if [ $fArcCopy == 1 ] || [ $fSendArcOnly == 1 ]; then
+   # Прочитаем заданные переменные из файла конфигурации проекта в блоке ARC
+   GetProgramVars "$VarsInCfgARC" "$PrjCfgFN" "ARC_SETUP"
+fi
+
+if [ $fCalCopy == 1 ]; then
+   # Прочитаем заданные переменные из файла конфигурации проекта в блоке CAL
+   GetProgramVars "$VarsInCfgCAL" "$PrjCfgFN" "CAL_SETUP"
+fi
+
+
+
+# Проверка на наличие ссылки с проектом
+if [ ! -L $SrcDir/$PrjName ]; then
+     MySuperEcho "Ссылка \"$SrcDir/$PrjName\" не найдена!\n" "Red" "tolog"
+     ArcStatMsg="[ NOTFULL ]"
+
+     # Завершим работу программы
+     FinalAction "Ссылка \"$SrcDir/$PrjName\" не найдена!"
+fi
+
+
+
+# Версия проекта
+PrjVers=`readlink $SrcDir/$PrjName | grep -o '/.*$' | awk -F'_' '{print $2}'`
+if [ "$PrjVers" == "" ]; then
+    MySuperEcho "Не найдена версия проекта в имени ссылки \"$SrcDir/$PrjName\"!\n" "Red" "tolog"
+    ArcStatMsg="[ NOTFULL ]"
+
+    # Завершим работу программы
+    FinalAction "Не найдена версия проекта в имени ссылки \"$SrcDir/$PrjName\"!"
+fi
+
+
+SaveAllPlatf=$PlatfName
+for CurPlatf in $PlatfName; do
+    [ -d $SrcDir/$PrjName/SRC/$CurPlatf ] && PlatfName=$CurPlatf && break
+done
+
+
+# Удаляем файл логов если он больше 5Mb
+if [ -f "$logfile" ]; then
+   LOG_SIZE=`wc -c $logfile | awk '{print $1}'`
+
+   # Если файл превышает 5Mb, то он удаляется
+   if (( $LOG_SIZE >= $MaxLogSize )); then
+      rm -f $logfile
+   fi
+fi
+
+
+if [ "$ExcludeObjList" != "" ]; then
+   # Создадим список объектов для исключения при копировании
+   echo "$ExcludeObjList" | sed "s/ /\n/g" > $StartDir/ExcludeObjList
+   cmdCP="$cmdCP --exclude-from=$StartDir/ExcludeObjList"
+fi
+
+
+echo -e "zip=$cmdZIP" >> $LastRunLog
+echo -e "rsync=$cmdCP" >> $LastRunLog
+echo -e "ExcludeObjList=$ExcludeObjList" >> $LastRunLog
+echo -e "SPOLastVer=$SPOLastVer" >> $LastRunLog
+echo -e "FMObyMake=$FMObyMake" >> $LastRunLog
+echo -e "Silent=$Silent" >> $LastRunLog
+echo -e "ReportRecList=$ReportRecList" >> $LastRunLog
+
+
+if [ $fArcCopy == 1 ]; then
+   MySuperEcho "\n---------------Собираем копию архива изделия $PrjName----------------------\n" "tolog"
+
+   # Имя проекта с версией
+   AllPrjName="${PrjName}_${PrjVers}"
+fi
+
+
+
+if [ $fCalCopy == 1 ]; then
+   MySuperEcho "\n--------------Собираем календарную копию архива изделия $PrjName------------\n" "tolog"
+
+   # Имя проекта с версией и текущей датой
+   AllPrjName="${PrjName}_${PrjVers}_${CurDate}_NotFull"
+fi
+
+
+
+if [ $fSendArcOnly == 1 ]; then
+   MySuperEcho "\n------------- Раскладываем копию архива изделия $PrjName------------\n" "tolog"
+
+   # Имя проекта с версией и текущей датой
+   AllPrjName="${PrjName}_${PrjVers}"
+fi
+
+
+
+if [ "$ArcNewVer" == "1" ]; then
+     # последний октет версии текущего ПО в SAMPLE
+     SampVers=`echo "$PrjVers" | grep -o -P '\.[^.]*$' | grep -o -P '^\.[0-9]*'`
+
+     # последний октет новой версии
+     TempNewVers=`echo "$SampVers" | sed -e 's/./1/'`
+     let TempNewVers=$TempNewVers+1
+
+     # если первая цифра единица, то сохраним её
+     SaveOne=""
+     if [ "`echo "$TempNewVers" | grep -o '^.'`" -gt "1" ]; then
+        SaveOne="1"
+     fi
+
+     # новая версия(только цифры)
+     NewVersFirst=`echo "$TempNewVers" | sed -e "s/^./\.$SaveOne/"`
+
+     # новая версия
+     AllPrjName=`echo "$AllPrjName" | sed -e "s/$SampVers/$NewVersFirst/"`
+fi
+
+
+MySuperEcho "\nDestDir:$DestDir/$AllPrjName\n"
+
+
+# Платформы
+AllPlatf="LIN WIN ArcServDirs COMMON CAL_SETUP ARC_SETUP"
+
+# Проверка на наличие цельного блока с ip-адресами в конфигурационном файле
+for CurPlatf in $AllPlatf; do
+  if [ "`grep "^\[$CurPlatf\]" $PrjCfgFN | wc -l`" != "2" ]; then
+      MySuperEcho "\nВ файле конфигурации проекта должно быть 2 блока \"[$CurPlatf]\"(открывающий и закрывающий)\n" "Red" "tolog"
+      ArcStatMsg="[ NOTFULL ]"
+
+      # Завершим работу программы
+      FinalAction "В конфигурационном файле проекта должно быть 2 блока \"[$CurPlatf]\"(открывающий и закрывающий)\n"
+  fi
+done
+
+
+
+
+if [ $fSendArcOnly == 1 ]; then
+    SendArc 1
+fi
+
+
+# Cоздание каталога для монтирования хостов
+MySuperEcho "Cоздадим каталог для монтирования хостов..."
+RunCMD "mkdir -p $MountPath"
+
+
+
+# Запрос о продолжении работы программы при существующем каталоге назначения
+if [ -d $DestDir/$AllPrjName ]; then
+
+   ContWork="y"
+   if [ "$Silent" != "1" ]; then
+      echo -e "\nКаталог назначения \"$DestDir/$AllPrjName\" уже существует. Продолжить работу программы? [Y/N]\n"
+      read ContWork
+   fi
+
+
+   if [ "$ContWork" != "Y" ] && [ "$ContWork" != "y" ]; then
+      # Дозапишем временный логфайл в основной
+      cat $LastRunLog >> $logfile
+
+      sudo chmod 666 $logfile
+
+      # Завершим работу программы
+      FinalAction "Каталог назначения \"$DestDir/$AllPrjName\" уже существует."
+   fi
+
+else
+    # Создание каталога с копией архива изделия
+    MySuperEcho "Создадим каталог назначения..."
+    RunCMD "mkdir -p $DestDir/$AllPrjName"
+fi
+
+
+
+
+if [ "$CreateCopyServ" == "1" ]; then
+    sudo mount -o nfsvers=3  $IPCopyServ:$ProjPathCopyOnServ $MountPath 2> /dev/null
+    if [ $? != 0 ]; then
+       MySuperEcho "\nНе удалось смонтировать каталог $ProjPathCopyOnServ с сервера $IPCopyServ\n" "Red" "tolog"
+       ArcStatMsg="[ NOTFULL ]"
+
+       FinalAction "\nНе удалось смонтировать каталог $ProjPathCopyOnServ с сервера $IPCopyServ\n"
+    else
+       sudo umount $MountPath
+    fi
+fi
+
+
+
+
+
+
+#######################################################################################################################
+###################################  Соберем копию архива с сервера изделия  ##########################################
+#######################################################################################################################
+
+
+# Если программа запущена не на сервере изделия (например на РМ)...
+if [ "`ifconfig | grep '\.55'`" == "" ]; then
+   echo -e "\n\n[ArchServ=$ArchServer] Begin:{`date --rfc-3339=seconds | awk -F'+' '{print $1}'`}" >> $LastRunLog
+   MySuperEcho "\nСобираем копию архива с сервера изделия ($ArchServer)...\n"
+   # Монтируем сервер изделия
+   RunCMD "sudo mount $ArchServer:$SrcDir $MountPath"
+   SrcDir="$MountPath"
+else  # Если программа запущена на сервере изделия...
+   echo -e "\n\n[ArchServ=$ArchServer] Begin:{`date --rfc-3339=seconds | awk -F'+' '{print $1}'`}" >> $LastRunLog
+   MySuperEcho "\nСобираем копию архива с сервера изделия ($ArchServer)...\n"
+fi
+
+
+# Номер строки с открывающим [ArcServDirs]-блоком в файле конфигурации проекта
+NumberStartArcServDirs=`grep -n "^\[ArcServDirs\]" $PrjCfgFN | head -1 | awk -F':' '{print $1}'`
+# Номер строки с закрывающим [ArcServDirs]-блоком в файле конфигурации проекта
+NumberEndArcServDirs=`grep -n "^\[ArcServDirs\]" $PrjCfgFN | tail -1 | awk -F':' '{print $1}'`
+
+# Список каталогов для копирования с сервера изделия
+ListArcServDirsInCfg="`sed -n ${NumberStartArcServDirs},${NumberEndArcServDirs}p $PrjCfgFN | awk '{print $1"\n"}'`"
+
+
+# Копирование последних версий СПО
+if [ "$SPOLastVer" == "1" ] && [ "`echo $ListArcServDirsInCfg | grep SRC/COMMON_MNT`" != "" ]; then
+
+  # Список каталогов, в которых будем копировать последние версии СПО
+  DirList="SRC"
+
+  # Бежим по каждому каталогу
+  for CurDir in $DirList; do
+
+         [ -d $SrcDir/$PrjName/$CurDir/COMMON_MNT ] && RunCMD "mkdir -p $DestDir/$AllPrjName/$CurDir/COMMON_MNT"
+
+         # Список имен СПО в каталоге /$CurDir/$PrjName/COMMON_MNT/PlatfName(пропускается имя каталога, в котором ищем)
+         SPODirList=`find "$SrcDir/$PrjName/$CurDir/COMMON_MNT/$PlatfName" -maxdepth 1 -type d -printf "%f\n" 2>/dev/null | tail -n +2 | sort`
+
+         # Цикл по каждому каталогу в /$CurDir/COMMON_MNT/PlatfName
+         for CurSPODir in $SPODirList; do
+
+            # Создадим каталог назначения для текущего СПО
+            RunCMD "mkdir -p $DestDir/$AllPrjName/$CurDir/COMMON_MNT/$PlatfName/$CurSPODir"
+
+            # Если нашли ссылку "work", то копируем каталог на который она указывает
+            if [ -L "$SrcDir/$PrjName/$CurDir/COMMON_MNT/$PlatfName/$CurSPODir/work" ]; then
+
+               # Версия, на которую указывает ссылка "work"
+               CurSPOVer=`readlink $SrcDir/$PrjName/$CurDir/COMMON_MNT/$PlatfName/$CurSPODir/work`
+               # Копируем каталог с последней версией СПО
+               RunCMD "$cmdCP $SrcDir/$PrjName/$CurDir/COMMON_MNT/$PlatfName/$CurSPODir/$CurSPOVer $DestDir/$AllPrjName/$CurDir/COMMON_MNT/$PlatfName/$CurSPODir"
+               # Копируем ссылку work из каталога текущего СПО
+               RunCMD "$cmdCP $SrcDir/$PrjName/$CurDir/COMMON_MNT/$PlatfName/$CurSPODir/work $DestDir/$AllPrjName/$CurDir/COMMON_MNT/$PlatfName/$CurSPODir"
+
+               # Копируем файлы из каталога текущего СПО
+               CurSPOFilesList=`find $SrcDir/$PrjName/$CurDir/COMMON_MNT/$PlatfName/$CurSPODir -maxdepth 1 -type f 2>/dev/null`
+               [ "$CurSPOFilesList" != "" ] && RunCMD "$cmdCP $CurSPOFilesList $DestDir/$AllPrjName/$CurDir/COMMON_MNT/$PlatfName/$CurSPODir"
+
+
+            else  # Копируем весь каталог с текущим ПО
+                RunCMD "$cmdCP $SrcDir/$PrjName/$CurDir/COMMON_MNT/$PlatfName/$CurSPODir $DestDir/$AllPrjName/$CurDir/COMMON_MNT/$PlatfName"
+            fi    # Если нашли ссылку "work", то копируем каталог на который она указывает
+
+         done      # Цикл по каждому имени ПО в каталоге /$CurDir/COMMON_MNT/PlatfName
+
+         # Копируем все файлы в каталоге $CurDir/COMMON_MNT/PlatfName
+         PNFilesList=`find $SrcDir/$PrjName/$CurDir/COMMON_MNT/$PlatfName -maxdepth 1 -type f 2>/dev/null`
+         [ "$PNFilesList" != "" ] && RunCMD "$cmdCP $PNFilesList $DestDir/$AllPrjName/$CurDir/COMMON_MNT/$PlatfName"
+
+         # Копируем все файлы в каталоге $CurDir/COMMON_MNT
+         CMFilesList=`find $SrcDir/$PrjName/$CurDir/COMMON_MNT -maxdepth 1 -type f 2>/dev/null`
+         [ "$CMFilesList" != "" ] && RunCMD "$cmdCP $CMFilesList $DestDir/$AllPrjName/$CurDir/COMMON_MNT"
+
+         [ -d $SrcDir/$PrjName/$CurDir/COMMON_MNT/MULTI ] && RunCMD "$cmdCP $SrcDir/$PrjName/$CurDir/COMMON_MNT/MULTI  $DestDir/$AllPrjName/$CurDir/COMMON_MNT"
+         [ -d $SrcDir/$PrjName/$CurDir/COMMON_MNT/INTEL ] && RunCMD "$cmdCP $SrcDir/$PrjName/$CurDir/COMMON_MNT/INTEL  $DestDir/$AllPrjName/$CurDir/COMMON_MNT"
+
+  done      # Бежим по каждому каталогу
+
+
+
+else    # Копируем каталоги SRC*/COMMON_MNT полностью
+    RunCMD "$cmdCP $SrcDir/$PrjName/SRC/COMMON_MNT $DestDir/$AllPrjName/SRC"
+fi  # Копирование последних версий СПО
+
+
+# Копирование заданных каталогов с сервера изделия
+GetServerDirs "$ListArcServDirsInCfg"
+
+if [ "`grep '\[ ERROR \]' $LastRunLog`" == "" ]; then
+      HostsStatForMail="$HostsStatForMail`printf "%-25s%s" "$ArchServer" "[ OK ]"`\n"
+else
+      HostsStatForMail="$HostsStatForMail`printf "%-25s%s" "$ArchServer" "[ ERROR ]"`\n"
+fi
+
+
+if [ $CheckArc == 1 ]; then
+    SaveCurDir=$PWD
+    cd $SrcDir/$PrjName
+    one=`echo $ExcludeObjList | sed 's/\.*\.o/SRC**\.o/g' | sed 's/\./\\\./g' | sed 's/*/\.*/g' | sed 's/ /|/g'`
+    find -name "*" -exec sh -c "if [ -d {} -a ! -L {} ]; then printf '|      %-10s|     %s\n' 'DIR' '{}'; else stat {} --printf '|      %-10s|     %n\n'; fi" \; 2>/dev/null | grep -vE "/($one)($|/)" > $SaveCurDir/FinalArc.tmp
+    cd $SaveCurDir
+fi
+
+# Если программа запущена не на сервере изделия (например на РМ)...
+if [ "`ifconfig | grep '\.55'`" == "" ]; then
+   # Отмонтируем сервер изделия
+   RunCMD "sudo umount $MountPath"
+   echo -e "[ArchServ=$ArchServer] End:{`date --rfc-3339=seconds | awk -F'+' '{print $1}'`}\n" >> $LastRunLog
+else  # Если программа запущена на сервере изделия...
+   echo -e "[ArchServ=$ArchServer] End:{`date --rfc-3339=seconds | awk -F'+' '{print $1}'`}\n" >> $LastRunLog
+fi
+
+
+
+   ContWork="y"
+   if [ "$Silent" != "1" ] && [ "$fCmdErrOnCurHost" != "0" ]; then
+      echo -e "\nПри обработке хоста произошла ошибка, продолжить работу программы? [Y/N]\n"
+      read ContWork
+   fi
+
+
+   if [ "$ContWork" != "Y" ] && [ "$ContWork" != "y" ]; then
+
+     echo -e "\n\nПри создании копии архива изделия возникли ошибки!\n\n" >> $LastRunLog
+     ResultInMail="При создании копии архива изделия возникли ошибки!"
+     MySuperEcho "\nПри создании копии архива изделия возникли ошибки!\nСм. лог: $logfile{`date --rfc-3339=seconds | awk -F'+' '{print $1}'`}\n" "Red"
+     ArcStatMsg="[ NOTFULL ]"
+
+     # Завершим работу программы
+     FinalAction
+
+   fi
+
+
+
+
+
+
+#######################################################################################################################
+###################################  Соберем копию архива с линуксовых и виндовых хостов ##############################
+#######################################################################################################################
+
+
+
+# Номер строки с открывающим [LIN]-блоком в файле конфигурации проекта
+NumberStartLIN=`grep -n "^\[LIN\]" $PrjCfgFN | head -1 | awk -F':' '{print $1}'`
+# Номер строки с закрывающим [LIN]-блоком в файле конфигурации проекта
+NumberEndLIN=`grep -n "^\[LIN\]" $PrjCfgFN | tail -1 | awk -F':' '{print $1}'`
+
+# Список линуксовых ip-адресов
+ListLINIpInCfg="`sed -n ${NumberStartLIN},${NumberEndLIN}p $PrjCfgFN | awk '{print $1"\n"}'`"
+
+# Номер строки с открывающим [WIN]-блоком в файле настроек
+NumberStartWIN=`grep -n "^\[WIN\]" $PrjCfgFN | head -1 | awk -F':' '{print $1}'`
+# Номер строки с закрывающим [WIN]-блоком в файле настроек
+NumberEndWIN=`grep -n "^\[WIN\]" $PrjCfgFN | tail -1 | awk -F':' '{print $1}'`
+
+# Список виндовых ip-адресов
+ListWINIpInCfg="`sed -n ${NumberStartWIN},${NumberEndWIN}p $PrjCfgFN | awk '{print $1"\n"}'`"
+
+
+MySuperEcho "\nПроверяем доступность по сети линуксовых хостов:"
+
+# Формирование списка доступных и недоступных Lin - хостов
+GetReachHostList "$ListLINIpInCfg" "$PingInterval"
+LinBadIpList="$BadIPList"
+
+IPListWithError=""
+
+# Создание копии архива линуксовых хостов
+GetArcFromLinHosts "$GoodIPList"
+
+# Повторное создание копии архива линуксовых хостов на которых были ошибки
+GetArcFromLinHosts "$IPListWithError"
+
+
+[ "$BadIPList" != "" ] && echo -e "[ INFO ]  \n\nUnreachable LIN hosts list:`echo "${BadIPList}" | sed 's/ /\\n/g'`" >> $LastRunLog
+
+
+MySuperEcho ""
+MySuperEcho "\nПроверяем доступность по сети виндовых хостов:"
+
+# Формирование списка доступных и недоступных Win - хостов
+GetReachHostList "$ListWINIpInCfg" "$PingInterval"
+WinBadIpList="$BadIPList"
+
+IPListWithError=""
+
+# Создание копии архива виндовых хостов
+GetArcFromWinHosts "$GoodIPList"
+
+[ "$BadIPList" != "" ] && echo -e "\n[ INFO ]  Unreachable WIN hosts list:`echo "${BadIPList}" | sed 's/ /\\n/g'`\n" >> $LastRunLog
+
+# Повторное создание копии архива линуксовых хостов на которых были ошибки
+GetArcFromWinHosts "$IPListWithError"
+
+
+# Получим копию архива с ранее недоступных по сети хостов (если они были)
+if [ $fUnreachHost != 0 ]; then
+
+   SendMess="Y"
+   if [ "$Silent" != "1" ] && [ "$ReportRecList" != "" ]; then
+      MySuperEcho "\nВнимание! Обнаружен не пустой список адресатов:" "Yellow"
+      MySuperEcho "   ReportRecList=$ReportRecList"
+      MySuperEcho "Отправлять письма с отчётами о работе программы на почту администраторам? [Y/N]"
+      fNoAsk=1
+      read SendMess
+   fi
+
+   if [ "$SendMess" != "Y" ] && [ "$SendMess" != "y" ]; then
+      fFirstSendMess=1
+      fNoAsk=1
+   fi
+
+   if [ "`echo $HostsStatForMail | grep 'ERROR'`" != "" ]; then
+      ErrorOnHost="\nПри обработке хостов произошли ошибки!"
+   fi
+
+   if [ "$fNoSendmail" != "1" ] && ([ "$SendMess" == "Y" ] || [ "$SendMess" == "y" ]) && [ "$fFirstSendMess" == "0" ]; then
+       # Отправим письмо с недоступными хостами на почту администраторам
+       sudo echo -e "GetArc v$ver   Prj=${PrjName}_${PrjVers},  HOST=$HOSTNAME,  USER=$USER,  DATE=`date --rfc-3339=seconds | awk -F'+' '{print $1}'`\n\n HOSTs STATUS:\n$HostsStatForMail$UnreachHostList\nЕсть недоступные хосты!$ErrorOnHost" | mail -s "GetArc v$ver   Prj=${PrjName}_${PrjVers}" -r GetArc "$ReportRecList"
+       [ $? != 0 ] && echo -e "Ошибка отправки письма со списком недоступных по сети хостов!" >> $LastRunLog
+   fi
+
+   if [ "$HostReachInterval" != "" ]; then
+      MySuperEcho "\n\n"
+      echo -e "\n\n[ INFO ]  Ожидаем $HostReachInterval секунд..." >> $LastRunLog
+
+      # Ожидание при наличии недоступных по сети хостов
+      for((CountSec=$HostReachInterval; CountSec!=0; CountSec--)); do
+         MySuperEcho "\033[1AОжидание $CountSec секунд..."
+         sleep 1
+      done
+   fi
+
+   MySuperEcho "\n\n[ INFO ]  Обработаем ранее недоступные по сети хосты...\n\n" "tolog"
+
+   UnreachHostList=""
+
+
+
+
+   # Формирование списка доступных и недоступных Lin - хостов
+   GetReachHostList "$LinBadIpList" "$PingInterval"
+
+   # Создание копии архива линуксовых хостов
+   GetArcFromLinHosts "$GoodIPList"
+
+   [ "$BadIPList" != "" ] && echo -e "\n\n[ INFO ]  Unreachable LIN hosts list:`echo "${BadIPList}" | sed 's/ /\\n/g'`" >> $LastRunLog
+
+
+   MySuperEcho ""
+
+
+   # Формирование списка доступных и недоступных Win - хостов
+   GetReachHostList "$WinBadIpList" "$PingInterval"
+
+   # Создание копии архива виндовых хостов
+   GetArcFromWinHosts "$GoodIPList"
+
+   [ "$BadIPList" != "" ] && echo -e "\n[ INFO ]  Unreachable WIN hosts list:`echo "${BadIPList}" | sed 's/ /\\n/g'`\n" >> $LastRunLog
+
+
+fi   # Получим копию архива с ранее недоступных по сети хостов (если они были)
+
+
+
+if [ "`grep '\[ ERROR \]' $LastRunLog`" == "" ] && [ "$UnreachHostList" == "" ]; then
+   if [ "$fCalCopy" == "1" ]; then
+       mv $DestDir/$AllPrjName $DestDir/${PrjName}_${PrjVers}_${CurDate}_Full
+       AllPrjName=${PrjName}_${PrjVers}_${CurDate}_Full
+   fi
+fi
+
+
+
+# Проверка целостности календарной копии
+CheckArc
+
+
+
+
+
+MySuperEcho "\nВыполняются дополнительные действия:\n"
+
+
+    [ "$SetAcc" == "1" ] && MySuperEcho "\n\n\nЗаменим атрибуты(права) всех файлов и каталогов на 777/666...\n"
+
+    [ "$fCalCopy" == "1" ] && MySuperEcho "Запаркуем полученную версию архива на сервере изделия...\n"
+
+
+    fErrInChattr=0
+    fErrInAcc=0
+savIFS=$IFS
+IFS=*
+    for CurStr in `sudo find $DestDir/$AllPrjName -type d -printf "%p*" -o -type f -printf "%p*"`; do
+        if [ "$CurStr" == "" ]; then exit; fi
+
+        if [ "$SetAcc" == "1" ]; then
+            sudo chown :nis315 "$CurStr" 2> /dev/null
+            [ $? != 0 ] && fErrInAcc=1
+            sudo chmod g-s $CurStr  2> /dev/null #удалим bit
+            [ $? != 0 ] && fErrInAcc=1
+            sudo test -x "$CurStr"  #исполняемый файл или нет
+            if [ $? == 0 ] || [ -d "$CurStr" ]; then # если есть...
+                sudo chmod 777 "$CurStr" 2> /dev/null
+                [ $? != 0 ] && fErrInAcc=1
+            else # если нет
+                sudo chmod 666 "$CurStr" 2> /dev/null
+                [ $? != 0 ] && fErrInAcc=1
+            fi
+         fi
+
+        if [ "$fCalCopy" == "1" ]; then
+           sudo chattr +i "$CurStr" 2>/dev/null
+           [ $? != 0 ] && fErrInChattr=1
+        fi
+    done
+
+IFS=$savIFS
+
+
+if [ "$SetAcc" == "1" ]; then
+   if [ "$fErrInAcc" == "0" ]; then
+      MySuperEcho "\n\n\n[ OK ]    Заменим атрибуты(права) всех файлов и каталогов на 777/666\n" "tolog"
+   else
+      MySuperEcho "\n\n\n[ ERROR ] Заменим атрибуты(права) всех файлов и каталогов на 777/666\n" "Red" "tolog"
+   fi
+fi
+
+if [ "$fCalCopy" == "1" ]; then
+    if [ "$fErrInChattr" == "0" ]; then
+          MySuperEcho "[ OK ]    Запаркуем полученную версию архива на сервере изделия\n" "tolog"
+    else
+          MySuperEcho "[ ERROR ] Запаркуем полученную версию архива на сервере изделия\n" "tolog"
+    fi
+fi
+
+
+
+####### Удалим наиболее ранние версии копии архива на сервере изделия #######
+
+
+if [ "$CreateCopyServ" == "1" ] && [ "$fCalCopy" == "1" ]; then
+  # Если задано ограничение на количество хранимых в каталоге назначения календарных копий...
+  if [ "$AmountCopyOnServ" != "" ]; then
+
+    # Список всех календарных копий в каталоге назначения
+    CalCopyList=`find $DestDir -maxdepth 1 -type d | grep "${PrjName}" | tail -n +2 | sort -V`
+
+    # Количество календарных копий в каталоге назначения
+    NumCalCopy=`echo -e "$CalCopyList" | wc -l`
+
+
+   # Если количество календарных копий в каталоге назначения больше заданного в файле конфигурации
+   # проекта (в переменной $AmountCopyOnServ), то оставим $AmountCopyOnServ календарных копий в
+   # каталоге назначения, удалив более старые по дате
+   if [ "$NumCalCopy" -gt "$AmountCopyOnServ" ]; then
+     let NumVersToDel=$NumCalCopy-$AmountCopyOnServ
+
+
+     echo -e "\n[ INFO ]  Удаляем наиболее ранние (по дате) копии архива издения($NumCalCopy>$AmountCopyOnServ):" >> $LastRunLog
+
+
+     # Список календарных копий, которые надо удалить
+     CalCopyListToDel=`echo -e "$CalCopyList" | head -${NumVersToDel}`
+
+     # Удаление более старых по дате календарных копий
+     cd $DestDir
+         sudo chattr -R -i $CalCopyListToDel 2>/dev/null
+         RunCMD "sudo rm -R $CalCopyListToDel"
+     cd $StartDir
+
+
+   else   #  if [ "$NumCalCopy" -gt "$AmountCopyOnServ" ]
+     MySuperEcho "[ INFO ]  Количество копий архива на сервере изделия не превышает числа в AmountCopyOnServ($NumCalCopy<=$AmountCopyOnServ). Удаление не требуется.\n" "tolog"
+   fi
+
+  else     #Если ограничение на количество хранимых в каталоге назначения календарных копий не задано
+     MySuperEcho "[ INFO ]  Ограничение на максимальное количество копий архива на сервере изделия не задано.\n" "tolog"
+  fi
+
+
+fi
+
+
+
+
+
+
+
+
+
+
+############################## Сохраним копию архива изделия на сервере с календарными копиями ###################################################
+
+
+# Если программа запущена на сервере изделия...
+if [ "$CreateCopyServ" == "1" ] && [ "$IPCopyServ" != "" ]; then
+
+   echo -e "\n[IPCopyServ=$IPCopyServ] Begin:{`date --rfc-3339=seconds | awk -F'+' '{print $1}'`}" >> $LastRunLog
+   MySuperEcho "\n[ INFO ]  Копируем копию архива изделия на сервер с календарными копиями...\n"
+
+   RunCMD "sudo mount -o nfsvers=3  $IPCopyServ:$ProjPathCopyOnServ $MountPath"
+   if [ $SaveExCod != 0 ]; then
+
+       if [ "`grep '\[ ERROR \]' $LastRunLog`" != "" ]; then
+         echo -e "\n\nПри создании копии архива изделия возникли ошибки!\n\n" >> $LastRunLog
+         ResultInMail="При создании копии архива изделия возникли ошибки!"
+         MySuperEcho "\nПри создании копии архива изделия возникли ошибки!\n{`date --rfc-3339=seconds | awk -F'+' '{print $1}'`}\n" "Red"
+         ArcStatMsg="[ NOTFULL ]"
+       else
+         if [ "$UnreachHostList" != "" ]; then
+             echo -e "\n\nПри создании копии архива изделия были недоступные по сети хосты!\n\n" >> $LastRunLog
+             ResultInMail="При создании копии архива изделия были недоступные по сети хосты!"
+             MySuperEcho "\nПри создании копии архива изделия были недоступные по сети хосты!\n{`date --rfc-3339=seconds | awk -F'+' '{print $1}'`}\n" "Red"
+             ArcStatMsg="[ NOTFULL ]"
+         else
+             if [ "$WarningInLetter" != "" ]; then
+                echo -e "\n\n$WarningInLetter\n" >> $LastRunLog
+                ResultInMail="$WarningInLetter"
+                MySuperEcho "\n$WarningInLetter{`date --rfc-3339=seconds | awk -F'+' '{print $1}'`}\n" "Green"
+             else
+                echo -e "\n\nОшибок нет.\n\n" >> $LastRunLog
+                ResultInMail="Ошибок нет."
+                MySuperEcho "\nОшибок нет.\n{`date --rfc-3339=seconds | awk -F'+' '{print $1}'`}\n" "Green"
+             fi
+         fi
+       fi
+
+
+
+       # Завершим работу программы
+       FinalAction
+   fi
+
+
+     cd $MountPath
+
+     # Если на сервере с календарными копиями не существует текущей версии архива...
+     if [ ! -d $AllPrjName ]; then
+         # Версия, которую надо "затарить" (последняя по дате)
+#         VersForTar=`ls | grep "${PrjName}" | sort | tail -1`
+          VersForTar=`find . -maxdepth 1 -type d | grep "${PrjName}" | sort -V | tail -1 | sed 's/\.\///g'`
+         # "Затарим" старую календарную копию
+         [ "$VersForTar" != "" ] && RunCMD "sudo tar cvfz $VersForTar.tgz $VersForTar"
+         [ "$SaveExCod" != "" ] && RunCMD "sudo rm -R $VersForTar"
+     else
+         MySuperEcho "[ INFO ]  Версия архива $AllPrjName уже есть на сервере с календарными копиями, она будет \"обновлена\"!" "Yellow" "tolog"
+     fi
+
+
+     # Скопируем текущую версию архива на сервер с календарными копиями
+     RunCMD "$cmdCP $DestDir/$AllPrjName $MountPath"
+
+
+####### Удалим наиболее ранние версии копии архива на сервере с календарными копиями #######
+
+    # Если задано ограничение на количество хранимых в каталоге назначения календарных копий
+    if [ "$AmountCopyOnServDest" != "" ]; then
+
+      # Список всех затареных календарных копий на сервере с календарными копиями
+      CalCopyList=`find . -maxdepth 1 -name "*.tgz"  -printf "%f\n" | grep "${PrjName}" | sort -V`
+
+      # Количество календарных копий на сервере с календарными копиями
+      NumCalCopy=`echo -e "$CalCopyList" | wc -l`
+
+      # Если количество календарных копий в каталоге назначения больше заданного в файле конфигурации
+      # проекта (в переменной $AmountCopyOnCalCopy), то оставим $AmountCopyOnCalCopy календарных копий в
+      # каталоге назначения, удалив более старые по дате
+      if [ "$NumCalCopy" -gt "$AmountCopyOnServDest" ]; then
+         let NumDeliteVers=$NumCalCopy-$AmountCopyOnServDest
+
+         # Список календарных копий, которые надо удалить
+         CalCopyListToDel=`echo -e "$CalCopyList" | head -${NumDeliteVers}`
+
+         echo -e "[ INFO ]  Удаляем наиболее ранние (по дате) копии архива издения на сервере с календарными копиями($NumCalCopy>$AmountCopyOnServDest):" >> $LastRunLog
+
+         # Удаление более старых по дате календарных копий
+         [ "$CalCopyList" != "" ] && RunCMD "sudo rm -R $CalCopyListToDel"
+
+      else      # if [ "$NumCalCopy" -gt "$AmountCopyOnServDest" ]
+          MySuperEcho "[ INFO ]  Количество копий архива на сервере с календарными копиями не превышает числа в AmountCopyOnServDest($NumCalCopy<=$AmountCopyOnServDest). Удаление не требуется." "tolog"
+      fi
+
+    else     #Если ограничение на количество хранимых в каталоге назначения календарных копий не задано
+     MySuperEcho "[ INFO ]  Ограничение на максимальное количество копий архива на сервере изделия не задано." "tolog"
+    fi
+
+
+   cd $StartDir
+
+   RunCMD "sudo umount $MountPath"
+
+   echo -e "[IPCopyServ=$IPCopyServ] End:{`date --rfc-3339=seconds | awk -F'+' '{print $1}'`}\n" >> $LastRunLog
+
+fi  # Если программа запущена на сервере изделия...
+
+
+if [ "`grep '\[ ERROR \]' $LastRunLog`" != "" ]; then
+    echo -e "\n\nПри создании копии архива изделия возникли ошибки!\n\n" >> $LastRunLog
+    ResultInMail="При создании копии архива изделия возникли ошибки!"
+    ArcStatMsg="[ NOTFULL ]"
+    MySuperEcho "\nПри создании копии архива изделия возникли ошибки!\n{`date --rfc-3339=seconds | awk -F'+' '{print $1}'`}\n" "Red"
+
+else
+
+     if [ "$UnreachHostList" != "" ]; then
+         echo -e "\n\nПри создании копии архива изделия были недоступные по сети хосты!\n\n" >> $LastRunLog
+         ResultInMail="При создании копии архива изделия были недоступные по сети хосты!"
+         MySuperEcho "\nПри создании копии архива изделия были недоступные по сети хосты!\n{`date --rfc-3339=seconds | awk -F'+' '{print $1}'`}\n" "Red"
+         ArcStatMsg="[ NOTFULL ]"
+     fi
+
+     if [ "$WarningInLetter" != "" ]; then
+        echo -e "\n\n$WarningInLetter\n" >> $LastRunLog
+        ResultInMail="$WarningInLetter"
+        MySuperEcho "\n$WarningInLetter{`date --rfc-3339=seconds | awk -F'+' '{print $1}'`}\n" "Green"
+     else
+        echo -e "\n\nОшибок нет.\n\n" >> $LastRunLog
+        ResultInMail="Ошибок нет."
+        MySuperEcho "\nОшибок нет.\n{`date --rfc-3339=seconds | awk -F'+' '{print $1}'`}\n" "Green"
+     fi
+fi
+
+# Завершим работу программы
+FinalAction
+
+
+
+
