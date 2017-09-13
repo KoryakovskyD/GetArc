@@ -30,7 +30,7 @@ public class GuiFormSet extends JFrame {
 
 
     private JCheckBox checkSilent = new JCheckBox("", false);
-    private JCheckBox checkCheckArc = new JCheckBox("", false);
+    private JCheckBox checkCheckArc = new JCheckBox("", true);
     private JCheckBox checkCreateCopyServ = new JCheckBox("", false);
     private JCheckBox checkSPOLastVer = new JCheckBox("", false);
     private JCheckBox checkFMObyMake = new JCheckBox("", false);
@@ -109,7 +109,7 @@ public class GuiFormSet extends JFrame {
                     ?"1":"0") + "\n";
             message += "IPCopyServ=" + inputIPCopyServ.getText() + "\n";
             message += "ProjPathCopyOnServ=" + inputProjPathCopyOnServ.getText() + "\n";
-            message += "ExcludeObjList=" + "\"" + inputExcludeObjList.getText()+ "\"" + "\n";
+            message += "ExcludeObjList=" + "\"" + inputExcludeObjList.getText() + "\"" + "\n";
             message += "SPOLastVer=" + ((checkSPOLastVer.isSelected())
                     ?"1":"0") + "\n";
             message += "FMObyMake=" + ((checkFMObyMake.isSelected())

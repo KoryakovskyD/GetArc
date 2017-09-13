@@ -10,6 +10,10 @@ public class GuiFormHostsWin extends JFrame {
     private JTextField inputIP2 = new JTextField("");
     private JTextField inputPrib1 = new JTextField("");
     private JTextField inputPrib2 = new JTextField("");
+    private JTextField inputIP3 = new JTextField("");
+    private JTextField inputIP4 = new JTextField("");
+    private JTextField inputPrib3 = new JTextField("");
+    private JTextField inputPrib4 = new JTextField("");
     private JTextField inputShare = new JTextField("/home/PROJECTS");
 
 
@@ -18,7 +22,7 @@ public class GuiFormHostsWin extends JFrame {
     private JLabel labelShare = new JLabel("Расшаренный каталог");
 
 
-    private JButton button = new JButton("Готово");
+    private JButton button = new JButton("Далее");
 
 
 
@@ -39,6 +43,10 @@ public class GuiFormHostsWin extends JFrame {
         container.add(inputPrib1);
         container.add(inputIP2);
         container.add(inputPrib2);
+        container.add(inputIP3);
+        container.add(inputPrib3);
+        container.add(inputIP4);
+        container.add(inputPrib4);
 
         container.add(labelShare);
         container.add(inputShare);
@@ -61,6 +69,8 @@ public class GuiFormHostsWin extends JFrame {
             message += "[WIN]" + "\n";
             message += inputIP1.getText() + "       " + inputPrib1.getText() + "\n";
             message += inputIP2.getText() + "      " + inputPrib2.getText() + "\n";
+            message += inputIP3.getText() + "       " + inputPrib3.getText() + "\n";
+            message += inputIP4.getText() + "      " + inputPrib4.getText() + "\n";
             message += "WINShareDir=/home/PROJECTS" + "\n";
             message += "[WIN]" + "\n" + "\n";
 
@@ -76,11 +86,11 @@ public class GuiFormHostsWin extends JFrame {
                 System.out.println(ex.getMessage());
             }
 
-            //setVisible(false);
+            setVisible(false);
 
-            System.exit(0);
-            // GuiFormSet app2 = new GuiFormSet();
-            //app2.setVisible(true);
+            //System.exit(0);
+            GuiFormIni app6 = new GuiFormIni();
+            app6.setVisible(true);
         }
     }
 

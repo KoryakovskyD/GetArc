@@ -9,16 +9,16 @@ import javax.swing.*;
 
 public class GuiFormHostsLin extends JFrame {
 
-    private JTextField inputIP1 = new JTextField("192.168.11.1");
-    private JTextField inputIP2 = new JTextField("192.168.11.2");
+    private JTextField inputIP1 = new JTextField("");
+    private JTextField inputIP2 = new JTextField("");
     private JTextField inputIP3 = new JTextField("");
     private JTextField inputIP4 = new JTextField("");
     private JTextField inputIP5 = new JTextField("");
     private JTextField inputIP6 = new JTextField("");
     private JTextField inputIP7 = new JTextField("");
     private JTextField inputIP8 = new JTextField("");
-    private JTextField inputPrib1 = new JTextField("01");
-    private JTextField inputPrib2 = new JTextField("08");
+    private JTextField inputPrib1 = new JTextField("");
+    private JTextField inputPrib2 = new JTextField("");
     private JTextField inputPrib3 = new JTextField("");
     private JTextField inputPrib4 = new JTextField("");
     private JTextField inputPrib5 = new JTextField("");
@@ -32,7 +32,7 @@ public class GuiFormHostsLin extends JFrame {
     private JLabel labelShare = new JLabel("Расшаренный каталог");
 
 
-    private JButton button = new JButton("Готово");
+    private JButton button = new JButton("Далее");
 
 
 
@@ -84,6 +84,7 @@ public class GuiFormHostsLin extends JFrame {
         public void actionPerformed(ActionEvent e) {
             String message = "";
 
+            message += "[LIN]" + "\n";
             message += inputIP1.getText() + "      " + inputPrib1.getText() + "\n";
             message += inputIP2.getText() + "      " + inputPrib2.getText() + "\n";
             message += inputIP3.getText() + "      " + inputPrib3.getText() + "\n";
