@@ -4,20 +4,18 @@ import java.io.FileWriter;
 import java.io.IOException;
 import javax.swing.*;
 
-public class GuiFormHosts extends JFrame {
+public class GuiFormHostsWin extends JFrame {
 
-    private JTextField inputIP1 = new JTextField("192.168.11.1");
-    private JTextField inputIP2 = new JTextField("192.168.11.2");
-    private JTextField inputPrib1 = new JTextField("01");
-    private JTextField inputPrib2 = new JTextField("08");
+    private JTextField inputIP1 = new JTextField("");
+    private JTextField inputIP2 = new JTextField("");
+    private JTextField inputPrib1 = new JTextField("");
+    private JTextField inputPrib2 = new JTextField("");
     private JTextField inputShare = new JTextField("/home/PROJECTS");
-    private JTextField inputOS = new JTextField("LIN");
 
 
-    private JLabel labelIP = new JLabel("IP-адрес");
+    private JLabel labelIP = new JLabel("IP-адрес 'Windows' хоста");
     private JLabel labelPrib = new JLabel("прибор/подсистема");
     private JLabel labelShare = new JLabel("Расшаренный каталог");
-    private JLabel labelOS = new JLabel("Тип операционной системы");
 
 
     private JButton button = new JButton("Готово");
@@ -25,8 +23,8 @@ public class GuiFormHosts extends JFrame {
 
 
 
-    public GuiFormHosts() {
-        super("IP-адреса HOST-ЭВМ, с которых надо копировать ПО ЦВК");
+    public GuiFormHostsWin() {
+        super("IP-адреса 'виндового' HOST-ЭВМ, с которых надо копировать ПО ЦВК");
         this.setBounds(200,200,1100,500);
         this.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 
@@ -45,9 +43,6 @@ public class GuiFormHosts extends JFrame {
         container.add(labelShare);
         container.add(inputShare);
 
-        container.add(labelOS);
-        container.add(inputOS);
-
         container.add(button);
 
 
@@ -63,16 +58,16 @@ public class GuiFormHosts extends JFrame {
         public void actionPerformed(ActionEvent e) {
             String message = "";
 
-            message += "[" + inputOS.getText() + "]" + "\n";
-            message += inputIP1.getText() + "      " + inputPrib1.getText() + "\n";
+            message += "[WIN]" + "\n";
+            message += inputIP1.getText() + "       " + inputPrib1.getText() + "\n";
             message += inputIP2.getText() + "      " + inputPrib2.getText() + "\n";
-            message += inputOS.getText() + "ShareDir=" + inputShare.getText() + "\n";
-            message += "[" + inputOS.getText() + "]" + "\n" + "\n";
+            message += "WINShareDir=/home/PROJECTS" + "\n";
+            message += "[WIN]" + "\n" + "\n";
 
 
             System.out.println(message);
 
-            try (FileWriter writer = new FileWriter("C:\\USR\\aa.txt",true))
+            try (FileWriter writer = new FileWriter("/home/users/kor/GetArc/getarc.cfg",true))
             {
                 writer.write(message);
                 writer.flush();

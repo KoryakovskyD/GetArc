@@ -72,7 +72,7 @@ public class GuiFormBasic extends JFrame {
 
             System.out.println(message);
 
-            try (FileWriter writer = new FileWriter("C:\\USR\\aa.txt",false))
+            try (FileWriter writer = new FileWriter("/home/users/kor/GetArc/getarc.cfg",false))
             {
                 writer.write(message);
                 writer.flush();

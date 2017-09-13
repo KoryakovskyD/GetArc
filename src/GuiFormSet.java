@@ -105,7 +105,7 @@ public class GuiFormSet extends JFrame {
             message += "DestDir=" + inputDestDir.getText() + "\n";
             message += "CheckArc=" + ((checkCheckArc.isSelected())
                     ?"1":"0") + "\n";
-            message += "CreateCopyOnServ=" + ((checkCreateCopyServ.isSelected())
+            message += "CreateCopyServ=" + ((checkCreateCopyServ.isSelected())
                     ?"1":"0") + "\n";
             message += "IPCopyServ=" + inputIPCopyServ.getText() + "\n";
             message += "ProjPathCopyOnServ=" + inputProjPathCopyOnServ.getText() + "\n";
@@ -120,9 +120,12 @@ public class GuiFormSet extends JFrame {
                     ?"1":"0") + "\n";
             message += "[ARC_SETUP]" + "\n" + "\n";
 
+            message += "[CAL_SETUP]" + "\n";
+            message += "[CAL_SETUP]" + "\n" + "\n";
+
             System.out.println(message);
 
-            try (FileWriter writer = new FileWriter("C:\\USR\\aa.txt",true))
+            try (FileWriter writer = new FileWriter("/home/users/kor/GetArc/getarc.cfg",true))
             {
                 writer.write(message);
                 writer.flush();

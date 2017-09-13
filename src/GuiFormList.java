@@ -61,7 +61,7 @@ public class GuiFormList extends JFrame {
 
             System.out.println(message);
 
-            try (FileWriter writer = new FileWriter("C:\\USR\\aa.txt",true))
+            try (FileWriter writer = new FileWriter("/home/users/kor/GetArc/getarc.cfg",true))
             {
                 writer.write(message);
                 writer.flush();
@@ -72,7 +72,7 @@ public class GuiFormList extends JFrame {
 
             setVisible(false);
 
-            GuiFormHosts app3 = new GuiFormHosts();
+            GuiFormHostsLin app3 = new GuiFormHostsLin();
             app3.setVisible(true);
         }
     }
